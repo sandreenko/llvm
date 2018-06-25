@@ -91,6 +91,7 @@ representation.
    CompileCudaWithLLVM
    ReportingGuide
    Benchmarking
+   Docker
 
 :doc:`GettingStarted`
    Discusses how to get up and running quickly with the LLVM infrastructure.
@@ -161,6 +162,9 @@ representation.
    A collection of tips for frontend authors on how to generate IR 
    which LLVM is able to effectively optimize.
 
+:doc:`Docker`
+   A reference for using Dockerfiles provided with LLVM.
+
 
 Programming Documentation
 =========================
@@ -212,7 +216,6 @@ For developers of applications which use LLVM as a library.
 
 `Doxygen generated documentation <http://llvm.org/doxygen/>`_
   (`classes <http://llvm.org/doxygen/inherits.html>`_)
-  (`tarball <http://llvm.org/doxygen/doxygen.tar.gz>`_)
 
 `Documentation for Go bindings <http://godoc.org/llvm.org/llvm/bindings/go/llvm>`_
 
@@ -276,6 +279,7 @@ For API clients and LLVM developers.
    GlobalISel
    XRay
    XRayExample
+   XRayFDRFormat
    PDB/index
 
 :doc:`WritingAnLLVMPass`

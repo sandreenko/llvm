@@ -329,6 +329,7 @@ class LowerTypeTestsModule {
   unsigned getJumpTableEntrySize();
   Type *getJumpTableEntryType();
   void createJumpTableEntry(raw_ostream &AsmOS, raw_ostream &ConstraintOS,
+                            Triple::ArchType JumpTableArch,
                             SmallVectorImpl<Value *> &AsmArgs, Function *Dest);
   void verifyTypeMDNode(GlobalObject *GO, MDNode *Type);
   void buildBitSetsFromFunctions(ArrayRef<Metadata *> TypeIds,
@@ -634,6 +635,10 @@ Value *LowerTypeTestsModule::lowerTypeTestCall(Metadata *TypeId, CallInst *CI,
                            Br->getMetadata(LLVMContext::MD_prof));
         ReplaceInstWithInst(InitialBB->getTerminator(), NewBr);
 
+        // Update phis in Else resulting from InitialBB being split
+        for (auto &Phi : Else->phis())
+          Phi.addIncoming(Phi.getIncomingValueForBlock(Then), InitialBB);
+
         IRBuilder<> ThenB(CI);
         return createBitSetTest(ThenB, TIL, BitOffset);
       }
@@ -855,15 +860,20 @@ void LowerTypeTestsModule::importFunction(Function *F, bool isDefinition) {
     FDecl = Function::Create(F->getFunctionType(), GlobalValue::ExternalLinkage,
                              Name + ".cfi_jt", &M);
     FDecl->setVisibility(GlobalValue::HiddenVisibility);
-  } else {
-    // Definition.
-    assert(isDefinition);
+  } else if (isDefinition) {
     F->setName(Name + ".cfi");
     F->setLinkage(GlobalValue::ExternalLinkage);
     F->setVisibility(GlobalValue::HiddenVisibility);
     FDecl = Function::Create(F->getFunctionType(), GlobalValue::ExternalLinkage,
                              Name, &M);
     FDecl->setVisibility(Visibility);
+  } else {
+    // Function definition without type metadata, where some other translation
+    // unit contained a declaration with type metadata. This normally happens
+    // during mixed CFI + non-CFI compilation. We do nothing with the function
+    // so that it is treated the same way as a function defined outside of the
+    // LTO unit.
+    return;
   }
 
   if (F->isWeakForLinker())
@@ -974,15 +984,16 @@ unsigned LowerTypeTestsModule::getJumpTableEntrySize() {
 // constraints and arguments to AsmOS, ConstraintOS and AsmArgs.
 void LowerTypeTestsModule::createJumpTableEntry(
     raw_ostream &AsmOS, raw_ostream &ConstraintOS,
-    SmallVectorImpl<Value *> &AsmArgs, Function *Dest) {
+    Triple::ArchType JumpTableArch, SmallVectorImpl<Value *> &AsmArgs,
+    Function *Dest) {
   unsigned ArgIndex = AsmArgs.size();
 
-  if (Arch == Triple::x86 || Arch == Triple::x86_64) {
+  if (JumpTableArch == Triple::x86 || JumpTableArch == Triple::x86_64) {
     AsmOS << "jmp ${" << ArgIndex << ":c}@plt\n";
     AsmOS << "int3\nint3\nint3\n";
-  } else if (Arch == Triple::arm || Arch == Triple::aarch64) {
+  } else if (JumpTableArch == Triple::arm || JumpTableArch == Triple::aarch64) {
     AsmOS << "b $" << ArgIndex << "\n";
-  } else if (Arch == Triple::thumb) {
+  } else if (JumpTableArch == Triple::thumb) {
     AsmOS << "b.w $" << ArgIndex << "\n";
   } else {
     report_fatal_error("Unsupported architecture for jump tables");
@@ -1069,6 +1080,46 @@ void LowerTypeTestsModule::replaceWeakDeclarationWithJumpTablePtr(
   PlaceholderFn->eraseFromParent();
 }
 
+static bool isThumbFunction(Function *F, Triple::ArchType ModuleArch) {
+  Attribute TFAttr = F->getFnAttribute("target-features");
+  if (!TFAttr.hasAttribute(Attribute::None)) {
+    SmallVector<StringRef, 6> Features;
+    TFAttr.getValueAsString().split(Features, ',');
+    for (StringRef Feature : Features) {
+      if (Feature == "-thumb-mode")
+        return false;
+      else if (Feature == "+thumb-mode")
+        return true;
+    }
+  }
+
+  return ModuleArch == Triple::thumb;
+}
+
+// Each jump table must be either ARM or Thumb as a whole for the bit-test math
+// to work. Pick one that matches the majority of members to minimize interop
+// veneers inserted by the linker.
+static Triple::ArchType
+selectJumpTableArmEncoding(ArrayRef<GlobalTypeMember *> Functions,
+                           Triple::ArchType ModuleArch) {
+  if (ModuleArch != Triple::arm && ModuleArch != Triple::thumb)
+    return ModuleArch;
+
+  unsigned ArmCount = 0, ThumbCount = 0;
+  for (const auto GTM : Functions) {
+    if (!GTM->isDefinition()) {
+      // PLT stubs are always ARM.
+      ++ArmCount;
+      continue;
+    }
+
+    Function *F = cast<Function>(GTM->getGlobal());
+    ++(isThumbFunction(F, ModuleArch) ? ThumbCount : ArmCount);
+  }
+
+  return ArmCount > ThumbCount ? Triple::arm : Triple::thumb;
+}
+
 void LowerTypeTestsModule::createJumpTable(
     Function *F, ArrayRef<GlobalTypeMember *> Functions) {
   std::string AsmStr, ConstraintStr;
@@ -1076,8 +1127,10 @@ void LowerTypeTestsModule::createJumpTable(
   SmallVector<Value *, 16> AsmArgs;
   AsmArgs.reserve(Functions.size() * 2);
 
+  Triple::ArchType JumpTableArch = selectJumpTableArmEncoding(Functions, Arch);
+
   for (unsigned I = 0; I != Functions.size(); ++I)
-    createJumpTableEntry(AsmOS, ConstraintOS, AsmArgs,
+    createJumpTableEntry(AsmOS, ConstraintOS, JumpTableArch, AsmArgs,
                          cast<Function>(Functions[I]->getGlobal()));
 
   // Try to emit the jump table at the end of the text segment.
@@ -1094,10 +1147,14 @@ void LowerTypeTestsModule::createJumpTable(
   // attribute.
   if (OS != Triple::Win32)
     F->addFnAttr(llvm::Attribute::Naked);
-  // Thumb jump table assembly needs Thumb2. The following attribute is added by
-  // Clang for -march=armv7.
-  if (Arch == Triple::thumb)
+  if (JumpTableArch == Triple::arm)
+    F->addFnAttr("target-features", "-thumb-mode");
+  if (JumpTableArch == Triple::thumb) {
+    F->addFnAttr("target-features", "+thumb-mode");
+    // Thumb jump table assembly needs Thumb2. The following attribute is added
+    // by Clang for -march=armv7.
     F->addFnAttr("target-cpu", "cortex-a8");
+  }
 
   BasicBlock *BB = BasicBlock::Create(M.getContext(), "entry", F);
   IRBuilder<> IRB(BB);
@@ -1507,14 +1564,27 @@ bool LowerTypeTestsModule::lower() {
               FunctionType::get(Type::getVoidTy(M.getContext()), false),
               GlobalVariable::ExternalLinkage, FunctionName, &M);
 
-        if (Linkage == CFL_Definition)
-          F->eraseMetadata(LLVMContext::MD_type);
+        // If the function is available_externally, remove its definition so
+        // that it is handled the same way as a declaration. Later we will try
+        // to create an alias using this function's linkage, which will fail if
+        // the linkage is available_externally. This will also result in us
+        // following the code path below to replace the type metadata.
+        if (F->hasAvailableExternallyLinkage()) {
+          F->setLinkage(GlobalValue::ExternalLinkage);
+          F->deleteBody();
+          F->setComdat(nullptr);
+          F->clearMetadata();
+        }
 
+        // If the function in the full LTO module is a declaration, replace its
+        // type metadata with the type metadata we found in cfi.functions. That
+        // metadata is presumed to be more accurate than the metadata attached
+        // to the declaration.
         if (F->isDeclaration()) {
           if (Linkage == CFL_WeakDeclaration)
             F->setLinkage(GlobalValue::ExternalWeakLinkage);
 
-          SmallVector<MDNode *, 2> Types;
+          F->eraseMetadata(LLVMContext::MD_type);
           for (unsigned I = 2; I < FuncMD->getNumOperands(); ++I)
             F->addMetadata(LLVMContext::MD_type,
                            *cast<MDNode>(FuncMD->getOperand(I).get()));

@@ -318,7 +318,8 @@ writeSymbolTable(raw_fd_ostream &Out, object::Archive::Kind Kind,
         continue;
       if (!(Symflags & object::SymbolRef::SF_Global))
         continue;
-      if (Symflags & object::SymbolRef::SF_Undefined)
+      if (Symflags & object::SymbolRef::SF_Undefined &&
+          !(Symflags & object::SymbolRef::SF_Indirect))
         continue;
 
       unsigned NameOffset = NameOS.tell();
@@ -375,9 +376,8 @@ writeSymbolTable(raw_fd_ostream &Out, object::Archive::Kind Kind,
   return BodyStartOffset + 4;
 }
 
-std::pair<StringRef, std::error_code>
-llvm::writeArchive(StringRef ArcName,
-                   std::vector<NewArchiveMember> &NewMembers,
+std::error_code
+llvm::writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
                    bool WriteSymtab, object::Archive::Kind Kind,
                    bool Deterministic, bool Thin,
                    std::unique_ptr<MemoryBuffer> OldArchiveBuf) {
@@ -386,7 +386,7 @@ llvm::writeArchive(StringRef ArcName,
   int TmpArchiveFD;
   if (auto EC = sys::fs::createUniqueFile(ArcName + ".temp-archive-%%%%%%%.a",
                                           TmpArchiveFD, TmpArchive))
-    return std::make_pair(ArcName, EC);
+    return EC;
 
   tool_output_file Output(TmpArchive, TmpArchiveFD);
   raw_fd_ostream &Out = Output.os();
@@ -402,7 +402,7 @@ llvm::writeArchive(StringRef ArcName,
     ErrorOr<unsigned> MemberReferenceOffsetOrErr = writeSymbolTable(
         Out, Kind, NewMembers, MemberOffsetRefs, Deterministic);
     if (auto EC = MemberReferenceOffsetOrErr.getError())
-      return std::make_pair(ArcName, EC);
+      return EC;
     MemberReferenceOffset = MemberReferenceOffsetOrErr.get();
   }
 
@@ -464,5 +464,5 @@ llvm::writeArchive(StringRef ArcName,
   OldArchiveBuf.reset();
 
   sys::fs::rename(TmpArchive, ArcName);
-  return std::make_pair("", std::error_code());
+  return std::error_code();
 }

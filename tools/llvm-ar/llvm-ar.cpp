@@ -16,6 +16,7 @@
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/ToolDrivers/llvm-dlltool/DlltoolDriver.h"
 #include "llvm/ToolDrivers/llvm-lib/LibDriver.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ArchiveWriter.h"
@@ -687,10 +688,10 @@ performWriteOperation(ArchiveOperation Operation,
     break;
   }
 
-  std::pair<StringRef, std::error_code> Result =
+  std::error_code EC =
       writeArchive(ArchiveName, NewMembersP ? *NewMembersP : NewMembers, Symtab,
                    Kind, Deterministic, Thin, std::move(OldArchiveBuf));
-  failIfError(Result.second, Result.first);
+  failIfError(EC, ArchiveName);
 }
 
 static void createSymbolTable(object::Archive *OldArchive) {
@@ -863,6 +864,9 @@ int main(int argc, char **argv) {
   llvm::InitializeAllAsmParsers();
 
   StringRef Stem = sys::path::stem(ToolName);
+  if (Stem.find("dlltool") != StringRef::npos)
+    return dlltoolDriverMain(makeArrayRef(argv, argc));
+
   if (Stem.find("ranlib") == StringRef::npos &&
       Stem.find("lib") != StringRef::npos)
     return libDriverMain(makeArrayRef(argv, argc));
@@ -878,5 +882,5 @@ int main(int argc, char **argv) {
     return ranlib_main();
   if (Stem.find("ar") != StringRef::npos)
     return ar_main();
-  fail("Not ranlib, ar or lib!");
+  fail("Not ranlib, ar, lib or dlltool!");
 }

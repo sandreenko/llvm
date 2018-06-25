@@ -546,14 +546,17 @@ void RAGreedy::getAnalysisUsage(AnalysisUsage &AU) const {
 //===----------------------------------------------------------------------===//
 
 bool RAGreedy::LRE_CanEraseVirtReg(unsigned VirtReg) {
+  LiveInterval &LI = LIS->getInterval(VirtReg);
   if (VRM->hasPhys(VirtReg)) {
-    LiveInterval &LI = LIS->getInterval(VirtReg);
     Matrix->unassign(LI);
     aboutToRemoveInterval(LI);
     return true;
   }
   // Unassigned virtreg is probably in the priority queue.
   // RegAllocBase will erase it after dequeueing.
+  // Nonetheless, clear the live-range so that the debug
+  // dump will show the right state for that VirtReg.
+  LI.clear();
   return false;
 }
 
@@ -2458,7 +2461,7 @@ void RAGreedy::tryHintRecoloring(LiveInterval &VirtReg) {
   do {
     Reg = RecoloringCandidates.pop_back_val();
 
-    // We cannot recolor physcal register.
+    // We cannot recolor physical register.
     if (TargetRegisterInfo::isPhysicalRegister(Reg))
       continue;
 
@@ -2622,7 +2625,7 @@ unsigned RAGreedy::selectOrSplitImpl(LiveInterval &VirtReg,
   }
 
   // If we couldn't allocate a register from spilling, there is probably some
-  // invalid inline assembly. The base class wil report it.
+  // invalid inline assembly. The base class will report it.
   if (Stage >= RS_Done || !VirtReg.isSpillable())
     return tryLastChanceRecoloring(VirtReg, Order, NewVRegs, FixedRegisters,
                                    Depth);

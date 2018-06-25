@@ -113,6 +113,10 @@ public:
   /// \pre I is a valid iterator into BB.
   void moveBefore(BasicBlock &BB, SymbolTableList<Instruction>::iterator I);
 
+  /// Unlink this instruction from its current basic block and insert it into
+  /// the basic block that MovePos lives in, right after MovePos.
+  void moveAfter(Instruction *MovePos);
+
   //===--------------------------------------------------------------------===//
   // Subclass classification.
   //===--------------------------------------------------------------------===//
@@ -152,9 +156,14 @@ public:
     return getOpcode() == AShr;
   }
 
+  /// Determine if the Opcode is and/or/xor.
+  static inline bool isBitwiseLogicOp(unsigned Opcode) {
+    return Opcode == And || Opcode == Or || Opcode == Xor;
+  }
+
   /// Return true if this is and/or/xor.
   inline bool isBitwiseLogicOp() const {
-    return getOpcode() == And || getOpcode() == Or || getOpcode() == Xor;
+    return isBitwiseLogicOp(getOpcode());
   }
 
   /// Determine if the OpCode is one of the CastInst instructions.
@@ -551,7 +560,7 @@ public:
 
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const Value *V) {
+  static bool classof(const Value *V) {
     return V->getValueID() >= Value::InstructionVal;
   }
 

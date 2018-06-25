@@ -61,8 +61,14 @@ static cl::opt<float> ImportHotInstrFactor(
              "before processing newly imported functions"));
 
 static cl::opt<float> ImportHotMultiplier(
-    "import-hot-multiplier", cl::init(3.0), cl::Hidden, cl::value_desc("x"),
+    "import-hot-multiplier", cl::init(10.0), cl::Hidden, cl::value_desc("x"),
     cl::desc("Multiply the `import-instr-limit` threshold for hot callsites"));
+
+static cl::opt<float> ImportCriticalMultiplier(
+    "import-critical-multiplier", cl::init(100.0), cl::Hidden,
+    cl::value_desc("x"),
+    cl::desc(
+        "Multiply the `import-instr-limit` threshold for critical callsites"));
 
 // FIXME: This multiplier was not really tuned up.
 static cl::opt<float> ImportColdMultiplier(
@@ -123,19 +129,29 @@ selectCallee(const ModuleSummaryIndex &Index,
       CalleeSummaryList,
       [&](const std::unique_ptr<GlobalValueSummary> &SummaryPtr) {
         auto *GVSummary = SummaryPtr.get();
+        // For SamplePGO, in computeImportForFunction the OriginalId
+        // may have been used to locate the callee summary list (See
+        // comment there).
+        // The mapping from OriginalId to GUID may return a GUID
+        // that corresponds to a static variable. Filter it out here.
+        // This can happen when
+        // 1) There is a call to a library function which is not defined
+        // in the index.
+        // 2) There is a static variable with the  OriginalGUID identical
+        // to the GUID of the library function in 1);
+        // When this happens, the logic for SamplePGO kicks in and
+        // the static variable in 2) will be found, which needs to be
+        // filtered out.
+        if (GVSummary->getSummaryKind() == GlobalValueSummary::GlobalVarKind)
+          return false;
         if (GlobalValue::isInterposableLinkage(GVSummary->linkage()))
           // There is no point in importing these, we can't inline them
           return false;
-        if (auto *AS = dyn_cast<AliasSummary>(GVSummary)) {
-          GVSummary = &AS->getAliasee();
-          // Alias can't point to "available_externally". However when we import
-          // linkOnceODR the linkage does not change. So we import the alias
-          // and aliasee only in this case.
+        if (isa<AliasSummary>(GVSummary))
+          // Aliases can't point to "available_externally".
           // FIXME: we should import alias as available_externally *function*,
-          // the destination module does need to know it is an alias.
-          if (!GlobalValue::isLinkOnceODRLinkage(GVSummary->linkage()))
-            return false;
-        }
+          // the destination module does not need to know it is an alias.
+          return false;
 
         auto *Summary = cast<FunctionSummary>(GVSummary);
 
@@ -207,6 +223,8 @@ static void computeImportForFunction(
         return ImportHotMultiplier;
       if (Hotness == CalleeInfo::HotnessType::Cold)
         return ImportColdMultiplier;
+      if (Hotness == CalleeInfo::HotnessType::Critical)
+        return ImportCriticalMultiplier;
       return 1.0;
     };
 
@@ -219,16 +237,11 @@ static void computeImportForFunction(
       DEBUG(dbgs() << "ignored! No qualifying callee with summary found.\n");
       continue;
     }
-    // "Resolve" the summary, traversing alias,
-    const FunctionSummary *ResolvedCalleeSummary;
-    if (isa<AliasSummary>(CalleeSummary)) {
-      ResolvedCalleeSummary = cast<FunctionSummary>(
-          &cast<AliasSummary>(CalleeSummary)->getAliasee());
-      assert(
-          GlobalValue::isLinkOnceODRLinkage(ResolvedCalleeSummary->linkage()) &&
-          "Unexpected alias to a non-linkonceODR in import list");
-    } else
-      ResolvedCalleeSummary = cast<FunctionSummary>(CalleeSummary);
+
+    // "Resolve" the summary
+    assert(!isa<AliasSummary>(CalleeSummary) &&
+           "Unexpected alias in import list");
+    const auto *ResolvedCalleeSummary = cast<FunctionSummary>(CalleeSummary);
 
     assert(ResolvedCalleeSummary->instCount() <= NewThreshold &&
            "selectCallee() didn't honor the threshold");
@@ -311,7 +324,7 @@ static void ComputeImportForModule(
     if (!FuncSummary)
       // Skip import for global variables
       continue;
-    DEBUG(dbgs() << "Initalize import for " << GVSummary.first << "\n");
+    DEBUG(dbgs() << "Initialize import for " << GVSummary.first << "\n");
     computeImportForFunction(*FuncSummary, Index, ImportInstrLimit,
                              DefinedGVSummaries, Worklist, ImportList,
                              ExportLists);
@@ -537,14 +550,27 @@ void llvm::thinLTOResolveWeakForLinkerModule(
   };
 
   auto updateLinkage = [&](GlobalValue &GV) {
-    if (!GlobalValue::isWeakForLinker(GV.getLinkage()))
-      return;
     // See if the global summary analysis computed a new resolved linkage.
     const auto &GS = DefinedGlobals.find(GV.getGUID());
     if (GS == DefinedGlobals.end())
       return;
     auto NewLinkage = GS->second->linkage();
     if (NewLinkage == GV.getLinkage())
+      return;
+
+    // Switch the linkage to weakany if asked for, e.g. we do this for
+    // linker redefined symbols (via --wrap or --defsym).
+    // We record that the visibility should be changed here in `addThinLTO`
+    // as we need access to the resolution vectors for each input file in
+    // order to find which symbols have been redefined.
+    // We may consider reorganizing this code and moving the linkage recording
+    // somewhere else, e.g. in thinLTOResolveWeakForLinkerInIndex.
+    if (NewLinkage == GlobalValue::WeakAnyLinkage) {
+      GV.setLinkage(NewLinkage);
+      return;
+    }
+
+    if (!GlobalValue::isWeakForLinker(GV.getLinkage()))
       return;
     // Check for a non-prevailing def that has interposable linkage
     // (e.g. non-odr weak or linkonce). In that case we can't simply
@@ -700,43 +726,17 @@ Expected<bool> FunctionImporter::importFunctions(
         GlobalsToImport.insert(&GV);
       }
     }
+#ifndef NDEBUG
     for (GlobalAlias &GA : SrcModule->aliases()) {
-      // FIXME: This should eventually be controlled entirely by the summary.
-      if (FunctionImportGlobalProcessing::doImportAsDefinition(
-              &GA, &GlobalsToImport)) {
-        GlobalsToImport.insert(&GA);
-        continue;
-      }
-
       if (!GA.hasName())
         continue;
       auto GUID = GA.getGUID();
-      auto Import = ImportGUIDs.count(GUID);
-      DEBUG(dbgs() << (Import ? "Is" : "Not") << " importing alias " << GUID
+      assert(!ImportGUIDs.count(GUID) && "Unexpected alias in import list");
+      DEBUG(dbgs() << "Not importing alias " << GUID
                    << " " << GA.getName() << " from "
                    << SrcModule->getSourceFileName() << "\n");
-      if (Import) {
-        // Alias can't point to "available_externally". However when we import
-        // linkOnceODR the linkage does not change. So we import the alias
-        // and aliasee only in this case. This has been handled by
-        // computeImportForFunction()
-        GlobalObject *GO = GA.getBaseObject();
-        assert(GO->hasLinkOnceODRLinkage() &&
-               "Unexpected alias to a non-linkonceODR in import list");
-#ifndef NDEBUG
-        if (!GlobalsToImport.count(GO))
-          DEBUG(dbgs() << " alias triggers importing aliasee " << GO->getGUID()
-                       << " " << GO->getName() << " from "
-                       << SrcModule->getSourceFileName() << "\n");
-#endif
-        if (Error Err = GO->materialize())
-          return std::move(Err);
-        GlobalsToImport.insert(GO);
-        if (Error Err = GA.materialize())
-          return std::move(Err);
-        GlobalsToImport.insert(&GA);
-      }
     }
+#endif
 
     // Upgrade debug info after we're done materializing all the globals and we
     // have loaded all the required metadata!

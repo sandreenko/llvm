@@ -146,6 +146,8 @@ WebAssemblyTargetLowering::WebAssemblyTargetLowering(
 
   // Trap lowers to wasm unreachable
   setOperationAction(ISD::TRAP, MVT::Other, Legal);
+
+  setMaxAtomicSizeInBitsSupported(64);
 }
 
 FastISel *WebAssemblyTargetLowering::createFastISel(
@@ -233,7 +235,8 @@ bool WebAssemblyTargetLowering::isCheapToSpeculateCtlz() const {
 bool WebAssemblyTargetLowering::isLegalAddressingMode(const DataLayout &DL,
                                                       const AddrMode &AM,
                                                       Type *Ty,
-                                                      unsigned AS) const {
+                                                      unsigned AS,
+                                                      Instruction *I) const {
   // WebAssembly offsets are added as unsigned without wrapping. The
   // isLegalAddressingMode gives us no way to determine if wrapping could be
   // happening, so we approximate this by accepting only non-negative offsets.
@@ -313,7 +316,7 @@ SDValue WebAssemblyTargetLowering::LowerCall(
   // required, fail. Otherwise, just disable them.
   if ((CallConv == CallingConv::Fast && CLI.IsTailCall &&
        MF.getTarget().Options.GuaranteedTailCallOpt) ||
-      (CLI.CS && CLI.CS->isMustTailCall()))
+      (CLI.CS && CLI.CS.isMustTailCall()))
     fail(DL, DAG, "WebAssembly doesn't support tail call yet");
   CLI.IsTailCall = false;
 

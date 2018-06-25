@@ -365,7 +365,7 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   case CallingConv::PTX_Kernel:    Out << "ptx_kernel"; break;
   case CallingConv::PTX_Device:    Out << "ptx_device"; break;
   case CallingConv::X86_64_SysV:   Out << "x86_64_sysvcc"; break;
-  case CallingConv::X86_64_Win64:  Out << "x86_64_win64cc"; break;
+  case CallingConv::Win64:         Out << "win64cc"; break;
   case CallingConv::SPIR_FUNC:     Out << "spir_func"; break;
   case CallingConv::SPIR_KERNEL:   Out << "spir_kernel"; break;
   case CallingConv::Swift:         Out << "swiftcc"; break;
@@ -1045,6 +1045,10 @@ void SlotTracker::CreateFunctionSlot(const Value *V) {
 /// CreateModuleSlot - Insert the specified MDNode* into the slot table.
 void SlotTracker::CreateMetadataSlot(const MDNode *N) {
   assert(N && "Can't insert a null Value into SlotTracker!");
+
+  // Don't make slots for DIExpressions. We just print them inline everywhere.
+  if (isa<DIExpression>(N))
+    return;
 
   unsigned DestSlot = mdnNext;
   if (!mdnMap.insert(std::make_pair(N, DestSlot)).second)
@@ -1964,6 +1968,7 @@ static void writeDIImportedEntity(raw_ostream &Out, const DIImportedEntity *N,
   Printer.printString("name", N->getName());
   Printer.printMetadata("scope", N->getRawScope(), /* ShouldSkipNull */ false);
   Printer.printMetadata("entity", N->getRawEntity());
+  Printer.printMetadata("file", N->getRawFile());
   Printer.printInt("line", N->getLine());
   Out << ")";
 }
@@ -2072,6 +2077,13 @@ static void WriteAsOperandInternal(raw_ostream &Out, const Metadata *MD,
                                    TypePrinting *TypePrinter,
                                    SlotTracker *Machine, const Module *Context,
                                    bool FromValue) {
+  // Write DIExpressions inline when used as a value. Improves readability of
+  // debug info intrinsics.
+  if (const DIExpression *Expr = dyn_cast<DIExpression>(MD)) {
+    writeDIExpression(Out, Expr, TypePrinter, Machine, Context);
+    return;
+  }
+
   if (const MDNode *N = dyn_cast<MDNode>(MD)) {
     std::unique_ptr<SlotTracker> MachineStorage;
     if (!Machine) {
@@ -2119,6 +2131,8 @@ class AssemblyWriter {
   bool ShouldPreserveUseListOrder;
   UseListOrderStack UseListOrders;
   SmallVector<StringRef, 8> MDNames;
+  /// Synchronization scope names registered with LLVMContext.
+  SmallVector<StringRef, 8> SSNs;
 
 public:
   /// Construct an AssemblyWriter with an external SlotTracker
@@ -2134,10 +2148,15 @@ public:
   void writeOperand(const Value *Op, bool PrintType);
   void writeParamOperand(const Value *Operand, AttributeSet Attrs);
   void writeOperandBundles(ImmutableCallSite CS);
-  void writeAtomic(AtomicOrdering Ordering, SynchronizationScope SynchScope);
-  void writeAtomicCmpXchg(AtomicOrdering SuccessOrdering,
+  void writeSyncScope(const LLVMContext &Context,
+                      SyncScope::ID SSID);
+  void writeAtomic(const LLVMContext &Context,
+                   AtomicOrdering Ordering,
+                   SyncScope::ID SSID);
+  void writeAtomicCmpXchg(const LLVMContext &Context,
+                          AtomicOrdering SuccessOrdering,
                           AtomicOrdering FailureOrdering,
-                          SynchronizationScope SynchScope);
+                          SyncScope::ID SSID);
 
   void writeAllMDNodes();
   void writeMDNode(unsigned Slot, const MDNode *Node);
@@ -2199,30 +2218,42 @@ void AssemblyWriter::writeOperand(const Value *Operand, bool PrintType) {
   WriteAsOperandInternal(Out, Operand, &TypePrinter, &Machine, TheModule);
 }
 
-void AssemblyWriter::writeAtomic(AtomicOrdering Ordering,
-                                 SynchronizationScope SynchScope) {
+void AssemblyWriter::writeSyncScope(const LLVMContext &Context,
+                                    SyncScope::ID SSID) {
+  switch (SSID) {
+  case SyncScope::System: {
+    break;
+  }
+  default: {
+    if (SSNs.empty())
+      Context.getSyncScopeNames(SSNs);
+
+    Out << " syncscope(\"";
+    PrintEscapedString(SSNs[SSID], Out);
+    Out << "\")";
+    break;
+  }
+  }
+}
+
+void AssemblyWriter::writeAtomic(const LLVMContext &Context,
+                                 AtomicOrdering Ordering,
+                                 SyncScope::ID SSID) {
   if (Ordering == AtomicOrdering::NotAtomic)
     return;
 
-  switch (SynchScope) {
-  case SingleThread: Out << " singlethread"; break;
-  case CrossThread: break;
-  }
-
+  writeSyncScope(Context, SSID);
   Out << " " << toIRString(Ordering);
 }
 
-void AssemblyWriter::writeAtomicCmpXchg(AtomicOrdering SuccessOrdering,
+void AssemblyWriter::writeAtomicCmpXchg(const LLVMContext &Context,
+                                        AtomicOrdering SuccessOrdering,
                                         AtomicOrdering FailureOrdering,
-                                        SynchronizationScope SynchScope) {
+                                        SyncScope::ID SSID) {
   assert(SuccessOrdering != AtomicOrdering::NotAtomic &&
          FailureOrdering != AtomicOrdering::NotAtomic);
 
-  switch (SynchScope) {
-  case SingleThread: Out << " singlethread"; break;
-  case CrossThread: break;
-  }
-
+  writeSyncScope(Context, SSID);
   Out << " " << toIRString(SuccessOrdering);
   Out << " " << toIRString(FailureOrdering);
 }
@@ -2404,7 +2435,16 @@ void AssemblyWriter::printNamedMDNode(const NamedMDNode *NMD) {
   for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
     if (i)
       Out << ", ";
-    int Slot = Machine.getMetadataSlot(NMD->getOperand(i));
+
+    // Write DIExpressions inline.
+    // FIXME: Ban DIExpressions in NamedMDNodes, they will serve no purpose.
+    MDNode *Op = NMD->getOperand(i);
+    if (auto *Expr = dyn_cast<DIExpression>(Op)) {
+      writeDIExpression(Out, Expr, nullptr, nullptr, nullptr);
+      continue;
+    }
+
+    int Slot = Machine.getMetadataSlot(Op);
     if (Slot == -1)
       Out << "<badref>";
     else
@@ -3215,21 +3255,22 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
   // Print atomic ordering/alignment for memory operations
   if (const LoadInst *LI = dyn_cast<LoadInst>(&I)) {
     if (LI->isAtomic())
-      writeAtomic(LI->getOrdering(), LI->getSynchScope());
+      writeAtomic(LI->getContext(), LI->getOrdering(), LI->getSyncScopeID());
     if (LI->getAlignment())
       Out << ", align " << LI->getAlignment();
   } else if (const StoreInst *SI = dyn_cast<StoreInst>(&I)) {
     if (SI->isAtomic())
-      writeAtomic(SI->getOrdering(), SI->getSynchScope());
+      writeAtomic(SI->getContext(), SI->getOrdering(), SI->getSyncScopeID());
     if (SI->getAlignment())
       Out << ", align " << SI->getAlignment();
   } else if (const AtomicCmpXchgInst *CXI = dyn_cast<AtomicCmpXchgInst>(&I)) {
-    writeAtomicCmpXchg(CXI->getSuccessOrdering(), CXI->getFailureOrdering(),
-                       CXI->getSynchScope());
+    writeAtomicCmpXchg(CXI->getContext(), CXI->getSuccessOrdering(),
+                       CXI->getFailureOrdering(), CXI->getSyncScopeID());
   } else if (const AtomicRMWInst *RMWI = dyn_cast<AtomicRMWInst>(&I)) {
-    writeAtomic(RMWI->getOrdering(), RMWI->getSynchScope());
+    writeAtomic(RMWI->getContext(), RMWI->getOrdering(),
+                RMWI->getSyncScopeID());
   } else if (const FenceInst *FI = dyn_cast<FenceInst>(&I)) {
-    writeAtomic(FI->getOrdering(), FI->getSynchScope());
+    writeAtomic(FI->getContext(), FI->getOrdering(), FI->getSyncScopeID());
   }
 
   // Print Metadata info.
@@ -3551,7 +3592,7 @@ static void printMetadataImpl(raw_ostream &ROS, const Metadata &MD,
                          /* FromValue */ true);
 
   auto *N = dyn_cast<MDNode>(&MD);
-  if (OnlyAsOperand || !N)
+  if (OnlyAsOperand || !N || isa<DIExpression>(MD))
     return;
 
   OS << " = ";

@@ -926,6 +926,23 @@ void MachineVerifier::visitMachineInstrBefore(const MachineInstr *MI) {
       report("Generic instruction accessing memory must have one mem operand",
              MI);
     break;
+  case TargetOpcode::G_PHI: {
+    LLT DstTy = MRI->getType(MI->getOperand(0).getReg());
+    if (!DstTy.isValid() ||
+        !std::all_of(MI->operands_begin() + 1, MI->operands_end(),
+                     [this, &DstTy](const MachineOperand &MO) {
+                       if (!MO.isReg())
+                         return true;
+                       LLT Ty = MRI->getType(MO.getReg());
+                       if (!Ty.isValid() || (Ty != DstTy))
+                         return false;
+                       return true;
+                     }))
+      report("Generic Instruction G_PHI has operands with incompatible/missing "
+             "types",
+             MI);
+    break;
+  }
   case TargetOpcode::STATEPOINT:
     if (!MI->getOperand(StatepointOpers::IDPos).isImm() ||
         !MI->getOperand(StatepointOpers::NBytesPos).isImm() ||
@@ -985,6 +1002,14 @@ MachineVerifier::visitMachineOperand(const MachineOperand *MO, unsigned MONum) {
         report("Operand should be tied", MO, MONum);
       else if (unsigned(TiedTo) != MI->findTiedOperandIdx(MONum))
         report("Tied def doesn't match MCInstrDesc", MO, MONum);
+      else if (TargetRegisterInfo::isPhysicalRegister(MO->getReg())) {
+        const MachineOperand &MOTied = MI->getOperand(TiedTo);
+        if (!MOTied.isReg())
+          report("Tied counterpart must be a register", &MOTied, TiedTo);
+        else if (TargetRegisterInfo::isPhysicalRegister(MOTied.getReg()) &&
+                 MO->getReg() != MOTied.getReg())
+          report("Tied physical registers must match.", &MOTied, TiedTo);
+      }
     } else if (MO->isReg() && MO->isTied())
       report("Explicit operand should not be tied", MO, MONum);
   } else {

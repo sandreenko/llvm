@@ -94,6 +94,7 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
   struct LocalVariable {
     const DILocalVariable *DIVar = nullptr;
     SmallVector<LocalVarDefRange, 1> DefRanges;
+    bool UseReferenceType = false;
   };
 
   struct InlineSite {
@@ -118,7 +119,6 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
 
     SmallVector<LocalVariable, 1> Locals;
 
-    DebugLoc LastLoc;
     const MCSymbol *Begin = nullptr;
     const MCSymbol *End = nullptr;
     unsigned FuncId = 0;
@@ -147,6 +147,9 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
                             const DISubprogram *Inlinee);
 
   codeview::TypeIndex getFuncIdForSubprogram(const DISubprogram *SP);
+
+  void calculateRanges(LocalVariable &Var,
+                       const DbgValueHistoryMap::InstrRanges &Ranges);
 
   static void collectInlineSiteChildren(SmallVectorImpl<unsigned> &Children,
                                         const FunctionInfo &FI,
@@ -188,8 +191,8 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
 
   // The UDTs we have seen while processing types; each entry is a pair of type
   // index and type name.
-  std::vector<std::pair<std::string, codeview::TypeIndex>> LocalUDTs,
-      GlobalUDTs;
+  std::vector<std::pair<std::string, const DIType *>> LocalUDTs;
+  std::vector<std::pair<std::string, const DIType *>> GlobalUDTs;
 
   using FileToFilepathMapTy = std::map<const DIFile *, std::string>;
   FileToFilepathMapTy FileToFilepathMap;
@@ -223,8 +226,8 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
 
   void emitDebugInfoForRetainedTypes();
 
-  void emitDebugInfoForUDTs(
-      ArrayRef<std::pair<std::string, codeview::TypeIndex>> UDTs);
+  void
+  emitDebugInfoForUDTs(ArrayRef<std::pair<std::string, const DIType *>> UDTs);
 
   void emitDebugInfoForGlobal(const DIGlobalVariable *DIGV,
                               const GlobalVariable *GV, MCSymbol *GVSym);
@@ -260,6 +263,8 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
   codeview::TypeIndex getTypeIndex(DITypeRef TypeRef,
                                    DITypeRef ClassTyRef = DITypeRef());
 
+  codeview::TypeIndex getTypeIndexForReferenceTo(DITypeRef TypeRef);
+
   codeview::TypeIndex getMemberFunctionType(const DISubprogram *SP,
                                             const DICompositeType *Class);
 
@@ -267,7 +272,7 @@ class LLVM_LIBRARY_VISIBILITY CodeViewDebug : public DebugHandlerBase {
 
   codeview::TypeIndex getVBPTypeIndex();
 
-  void addToUDTs(const DIType *Ty, codeview::TypeIndex TI);
+  void addToUDTs(const DIType *Ty);
 
   codeview::TypeIndex lowerType(const DIType *Ty, const DIType *ClassTy);
   codeview::TypeIndex lowerTypeAlias(const DIDerivedType *Ty);

@@ -221,6 +221,7 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   RegInfo = Subtarget->getRegisterInfo();
   Itins = Subtarget->getInstrItineraryData();
 
+  setBooleanContents(ZeroOrOneBooleanContent);
   setBooleanVectorContents(ZeroOrNegativeOneBooleanContent);
 
   if (!Subtarget->isTargetDarwin() && !Subtarget->isTargetIOS() &&
@@ -1562,7 +1563,7 @@ ARMTargetLowering::getEffectiveCallingConv(CallingConv::ID CC,
                                            bool isVarArg) const {
   switch (CC) {
   default:
-    llvm_unreachable("Unsupported calling convention");
+    report_fatal_error("Unsupported calling convention");
   case CallingConv::ARM_AAPCS:
   case CallingConv::ARM_APCS:
   case CallingConv::GHC:
@@ -1611,7 +1612,7 @@ CCAssignFn *ARMTargetLowering::CCAssignFnForNode(CallingConv::ID CC,
                                                  bool isVarArg) const {
   switch (getEffectiveCallingConv(CC, isVarArg)) {
   default:
-    llvm_unreachable("Unsupported calling convention");
+    report_fatal_error("Unsupported calling convention");
   case CallingConv::ARM_APCS:
     return (Return ? RetCC_ARM_APCS : CC_ARM_APCS);
   case CallingConv::ARM_AAPCS:
@@ -1785,7 +1786,7 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     isTailCall = IsEligibleForTailCallOptimization(Callee, CallConv,
                     isVarArg, isStructRet, MF.getFunction()->hasStructRetAttr(),
                                                    Outs, OutVals, Ins, DAG);
-    if (!isTailCall && CLI.CS && CLI.CS->isMustTailCall())
+    if (!isTailCall && CLI.CS && CLI.CS.isMustTailCall())
       report_fatal_error("failed to perform tail call elimination on a call "
                          "site marked musttail");
     // We don't support GuaranteedTailCallOpt for ARM, only automatically
@@ -2032,7 +2033,7 @@ ARMTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     // more times in this block, we can improve codesize by calling indirectly
     // as BLXr has a 16-bit encoding.
     auto *GV = cast<GlobalAddressSDNode>(Callee)->getGlobal();
-    auto *BB = CLI.CS->getParent();
+    auto *BB = CLI.CS.getParent();
     bool PreferIndirect =
         Subtarget->isThumb() && MF.getFunction()->optForMinSize() &&
         count_if(GV->users(), [&BB](const User *U) {
@@ -3398,9 +3399,9 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
 static SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG &DAG,
                                  const ARMSubtarget *Subtarget) {
   SDLoc dl(Op);
-  ConstantSDNode *ScopeN = cast<ConstantSDNode>(Op.getOperand(2));
-  auto Scope = static_cast<SynchronizationScope>(ScopeN->getZExtValue());
-  if (Scope == SynchronizationScope::SingleThread)
+  ConstantSDNode *SSIDNode = cast<ConstantSDNode>(Op.getOperand(2));
+  auto SSID = static_cast<SyncScope::ID>(SSIDNode->getZExtValue());
+  if (SSID == SyncScope::SingleThread)
     return Op;
 
   if (!Subtarget->hasDataBarrier()) {
@@ -5356,15 +5357,15 @@ static SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
     // Integer comparisons.
     switch (SetCCOpcode) {
     default: llvm_unreachable("Illegal integer comparison");
-    case ISD::SETNE:  Invert = true;
+    case ISD::SETNE:  Invert = true; LLVM_FALLTHROUGH;
     case ISD::SETEQ:  Opc = ARMISD::VCEQ; break;
-    case ISD::SETLT:  Swap = true;
+    case ISD::SETLT:  Swap = true; LLVM_FALLTHROUGH;
     case ISD::SETGT:  Opc = ARMISD::VCGT; break;
-    case ISD::SETLE:  Swap = true;
+    case ISD::SETLE:  Swap = true; LLVM_FALLTHROUGH;
     case ISD::SETGE:  Opc = ARMISD::VCGE; break;
-    case ISD::SETULT: Swap = true;
+    case ISD::SETULT: Swap = true; LLVM_FALLTHROUGH;
     case ISD::SETUGT: Opc = ARMISD::VCGTU; break;
-    case ISD::SETULE: Swap = true;
+    case ISD::SETULE: Swap = true; LLVM_FALLTHROUGH;
     case ISD::SETUGE: Opc = ARMISD::VCGEU; break;
     }
 
@@ -5800,6 +5801,13 @@ static bool isVTBLMask(ArrayRef<int> M, EVT VT) {
   return VT == MVT::v8i8 && M.size() == 8;
 }
 
+static unsigned SelectPairHalf(unsigned Elements, ArrayRef<int> Mask,
+                               unsigned Index) {
+  if (Mask.size() == Elements * 2)
+    return Index / Elements;
+  return Mask[Index] == 0 ? 0 : 1;
+}
+
 // Checks whether the shuffle mask represents a vector transpose (VTRN) by
 // checking that pairs of elements in the shuffle mask represent the same index
 // in each vector, incrementing the expected index by 2 at each step.
@@ -5836,10 +5844,7 @@ static bool isVTRNMask(ArrayRef<int> M, EVT VT, unsigned &WhichResult) {
   // element is undefined, e.g. [-1, 4, 2, 6] will be rejected, because only
   // M[0] is used to determine WhichResult
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    if (M.size() == NumElts * 2)
-      WhichResult = i / NumElts;
-    else
-      WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     for (unsigned j = 0; j < NumElts; j += 2) {
       if ((M[i+j] >= 0 && (unsigned) M[i+j] != j + WhichResult) ||
           (M[i+j+1] >= 0 && (unsigned) M[i+j+1] != j + NumElts + WhichResult))
@@ -5866,10 +5871,7 @@ static bool isVTRN_v_undef_Mask(ArrayRef<int> M, EVT VT, unsigned &WhichResult){
     return false;
 
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    if (M.size() == NumElts * 2)
-      WhichResult = i / NumElts;
-    else
-      WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     for (unsigned j = 0; j < NumElts; j += 2) {
       if ((M[i+j] >= 0 && (unsigned) M[i+j] != j + WhichResult) ||
           (M[i+j+1] >= 0 && (unsigned) M[i+j+1] != j + WhichResult))
@@ -5901,7 +5903,7 @@ static bool isVUZPMask(ArrayRef<int> M, EVT VT, unsigned &WhichResult) {
     return false;
 
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     for (unsigned j = 0; j < NumElts; ++j) {
       if (M[i+j] >= 0 && (unsigned) M[i+j] != 2 * j + WhichResult)
         return false;
@@ -5932,7 +5934,7 @@ static bool isVUZP_v_undef_Mask(ArrayRef<int> M, EVT VT, unsigned &WhichResult){
 
   unsigned Half = NumElts / 2;
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     for (unsigned j = 0; j < NumElts; j += Half) {
       unsigned Idx = WhichResult;
       for (unsigned k = 0; k < Half; ++k) {
@@ -5972,7 +5974,7 @@ static bool isVZIPMask(ArrayRef<int> M, EVT VT, unsigned &WhichResult) {
     return false;
 
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     unsigned Idx = WhichResult * NumElts / 2;
     for (unsigned j = 0; j < NumElts; j += 2) {
       if ((M[i+j] >= 0 && (unsigned) M[i+j] != Idx) ||
@@ -6005,7 +6007,7 @@ static bool isVZIP_v_undef_Mask(ArrayRef<int> M, EVT VT, unsigned &WhichResult){
     return false;
 
   for (unsigned i = 0; i < M.size(); i += NumElts) {
-    WhichResult = M[i] == 0 ? 0 : 1;
+    WhichResult = SelectPairHalf(NumElts, M, i);
     unsigned Idx = WhichResult * NumElts / 2;
     for (unsigned j = 0; j < NumElts; j += 2) {
       if ((M[i+j] >= 0 && (unsigned) M[i+j] != Idx) ||
@@ -6520,9 +6522,7 @@ SDValue ARMTargetLowering::ReconstructShuffle(SDValue Op,
 /// support *some* VECTOR_SHUFFLE operations, those with specific masks.
 /// By default, if a target supports the VECTOR_SHUFFLE node, all mask values
 /// are assumed to be legal.
-bool
-ARMTargetLowering::isShuffleMaskLegal(const SmallVectorImpl<int> &M,
-                                      EVT VT) const {
+bool ARMTargetLowering::isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const {
   if (VT.getVectorNumElements() == 4 &&
       (VT.is128BitVector() || VT.is64BitVector())) {
     unsigned PFIndexes[4];
@@ -7580,6 +7580,9 @@ static SDValue createGPRPairNode(SelectionDAG &DAG, SDValue V) {
   SDValue VHi = DAG.getAnyExtOrTrunc(
       DAG.getNode(ISD::SRL, dl, MVT::i64, V, DAG.getConstant(32, dl, MVT::i32)),
       dl, MVT::i32);
+  bool isBigEndian = DAG.getDataLayout().isBigEndian();
+  if (isBigEndian)
+    std::swap (VLo, VHi);
   SDValue RegClass =
       DAG.getTargetConstant(ARM::GPRPairRegClassID, dl, MVT::i32);
   SDValue SubReg0 = DAG.getTargetConstant(ARM::gsub_0, dl, MVT::i32);
@@ -7607,10 +7610,14 @@ static void ReplaceCMP_SWAP_64Results(SDNode *N,
   MemOp[0] = cast<MemSDNode>(N)->getMemOperand();
   cast<MachineSDNode>(CmpSwap)->setMemRefs(MemOp, MemOp + 1);
 
-  Results.push_back(DAG.getTargetExtractSubreg(ARM::gsub_0, SDLoc(N), MVT::i32,
-                                               SDValue(CmpSwap, 0)));
-  Results.push_back(DAG.getTargetExtractSubreg(ARM::gsub_1, SDLoc(N), MVT::i32,
-                                               SDValue(CmpSwap, 0)));
+  bool isBigEndian = DAG.getDataLayout().isBigEndian();
+
+  Results.push_back(
+      DAG.getTargetExtractSubreg(isBigEndian ? ARM::gsub_1 : ARM::gsub_0,
+                                 SDLoc(N), MVT::i32, SDValue(CmpSwap, 0)));
+  Results.push_back(
+      DAG.getTargetExtractSubreg(isBigEndian ? ARM::gsub_0 : ARM::gsub_1,
+                                 SDLoc(N), MVT::i32, SDValue(CmpSwap, 0)));
   Results.push_back(SDValue(CmpSwap, 2));
 }
 
@@ -8778,7 +8785,6 @@ ARMTargetLowering::EmitLowered__chkstk(MachineInstr &MI,
   switch (TM.getCodeModel()) {
   case CodeModel::Small:
   case CodeModel::Medium:
-  case CodeModel::Default:
   case CodeModel::Kernel:
     BuildMI(*MBB, MI, DL, TII.get(ARM::tBL))
         .add(predOps(ARMCC::AL))
@@ -8786,10 +8792,11 @@ ARMTargetLowering::EmitLowered__chkstk(MachineInstr &MI,
         .addReg(ARM::R4, RegState::Implicit | RegState::Kill)
         .addReg(ARM::R4, RegState::Implicit | RegState::Define)
         .addReg(ARM::R12,
+                RegState::Implicit | RegState::Define | RegState::Dead)
+        .addReg(ARM::CPSR,
                 RegState::Implicit | RegState::Define | RegState::Dead);
     break;
-  case CodeModel::Large:
-  case CodeModel::JITDefault: {
+  case CodeModel::Large: {
     MachineRegisterInfo &MRI = MBB->getParent()->getRegInfo();
     unsigned Reg = MRI.createVirtualRegister(&ARM::rGPRRegClass);
 
@@ -8801,6 +8808,8 @@ ARMTargetLowering::EmitLowered__chkstk(MachineInstr &MI,
         .addReg(ARM::R4, RegState::Implicit | RegState::Kill)
         .addReg(ARM::R4, RegState::Implicit | RegState::Define)
         .addReg(ARM::R12,
+                RegState::Implicit | RegState::Define | RegState::Dead)
+        .addReg(ARM::CPSR,
                 RegState::Implicit | RegState::Define | RegState::Dead);
     break;
   }
@@ -12354,8 +12363,13 @@ bool ARMTargetLowering::isLegalT2ScaledAddressingMode(const AddrMode &AM,
     Scale = Scale & ~1;
     return Scale == 2 || Scale == 4 || Scale == 8;
   case MVT::i64:
+    // FIXME: What are we trying to model here? ldrd doesn't have an r + r
+    // version in Thumb mode.
     // r + r
-    if (((unsigned)AM.HasBaseReg + Scale) <= 2)
+    if (Scale == 1)
+      return true;
+    // r * 2 (this can be lowered to r + r).
+    if (!AM.HasBaseReg && Scale == 2)
       return true;
     return false;
   case MVT::isVoid:
@@ -12369,11 +12383,26 @@ bool ARMTargetLowering::isLegalT2ScaledAddressingMode(const AddrMode &AM,
   }
 }
 
+bool ARMTargetLowering::isLegalT1ScaledAddressingMode(const AddrMode &AM,
+                                                      EVT VT) const {
+  const int Scale = AM.Scale;
+
+  // Negative scales are not supported in Thumb1.
+  if (Scale < 0)
+    return false;
+
+  // Thumb1 addressing modes do not support register scaling excepting the
+  // following cases:
+  // 1. Scale == 1 means no scaling.
+  // 2. Scale == 2 this can be lowered to r + r if there is no base register.
+  return (Scale == 1) || (!AM.HasBaseReg && Scale == 2);
+}
+
 /// isLegalAddressingMode - Return true if the addressing mode represented
 /// by AM is legal for this target, for a load/store of the specified type.
 bool ARMTargetLowering::isLegalAddressingMode(const DataLayout &DL,
                                               const AddrMode &AM, Type *Ty,
-                                              unsigned AS) const {
+                                              unsigned AS, Instruction *I) const {
   EVT VT = getValueType(DL, Ty, true);
   if (!isLegalAddressImmediate(AM.BaseOffs, VT, Subtarget))
     return false;
@@ -12385,10 +12414,6 @@ bool ARMTargetLowering::isLegalAddressingMode(const DataLayout &DL,
   switch (AM.Scale) {
   case 0:  // no scale reg, must be "r+i" or "r", or "i".
     break;
-  case 1:
-    if (Subtarget->isThumb1Only())
-      return false;
-    LLVM_FALLTHROUGH;
   default:
     // ARM doesn't support any R+R*scale+imm addr modes.
     if (AM.BaseOffs)
@@ -12396,6 +12421,9 @@ bool ARMTargetLowering::isLegalAddressingMode(const DataLayout &DL,
 
     if (!VT.isSimple())
       return false;
+
+    if (Subtarget->isThumb1Only())
+      return isLegalT1ScaledAddressingMode(AM, VT);
 
     if (Subtarget->isThumb2())
       return isLegalT2ScaledAddressingMode(AM, VT);
@@ -12413,8 +12441,11 @@ bool ARMTargetLowering::isLegalAddressingMode(const DataLayout &DL,
       return isPowerOf2_32(Scale & ~1);
     case MVT::i16:
     case MVT::i64:
-      // r + r
-      if (((unsigned)AM.HasBaseReg + Scale) <= 2)
+      // r +/- r
+      if (Scale == 1 || (AM.HasBaseReg && Scale == -1))
+        return true;
+      // r * 2 (this can be lowered to r + r).
+      if (!AM.HasBaseReg && Scale == 2)
         return true;
       return false;
 
@@ -13391,7 +13422,7 @@ bool ARMTargetLowering::shouldConvertConstantLoadToIntImm(const APInt &Imm,
   return true;
 }
 
-bool ARMTargetLowering::isExtractSubvectorCheap(EVT ResVT,
+bool ARMTargetLowering::isExtractSubvectorCheap(EVT ResVT, EVT SrcVT,
                                                 unsigned Index) const {
   if (!isOperationLegalOrCustom(ISD::EXTRACT_SUBVECTOR, ResVT))
     return false;
@@ -13772,7 +13803,9 @@ bool ARMTargetLowering::lowerInterleavedLoad(
 
       // Convert the integer vector to pointer vector if the element is pointer.
       if (EltTy->isPointerTy())
-        SubVec = Builder.CreateIntToPtr(SubVec, SV->getType());
+        SubVec = Builder.CreateIntToPtr(
+            SubVec, VectorType::get(SV->getType()->getVectorElementType(),
+                                    VecTy->getVectorNumElements()));
 
       SubVecs[SV].push_back(SubVec);
     }
