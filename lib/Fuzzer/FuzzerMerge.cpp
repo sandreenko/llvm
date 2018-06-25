@@ -241,6 +241,7 @@ void Fuzzer::CrashResistantMergeInternalStep(const std::string &CFPath) {
       return true;
     });
     // Show stats.
+    TotalNumberOfRuns++;
     if (!(TotalNumberOfRuns & (TotalNumberOfRuns - 1)))
       PrintStats("pulse ");
     // Write the post-run marker and the coverage.
@@ -285,13 +286,12 @@ void Fuzzer::CrashResistantMerge(const std::vector<std::string> &Args,
 
   // Execute the inner process untill it passes.
   // Every inner process should execute at least one input.
-  auto BaseCmd = SplitBefore("-ignore_remaining_args=1",
-                             CloneArgsWithoutX(Args, "keep-all-flags"));
+  std::string BaseCmd = CloneArgsWithoutX(Args, "keep-all-flags");
   bool Success = false;
   for (size_t i = 1; i <= AllFiles.size(); i++) {
     Printf("MERGE-OUTER: attempt %zd\n", i);
-    auto ExitCode = ExecuteCommand(BaseCmd.first + " -merge_control_file=" +
-                                   CFPath + " " + BaseCmd.second);
+    auto ExitCode =
+        ExecuteCommand(BaseCmd + " -merge_control_file=" + CFPath);
     if (!ExitCode) {
       Printf("MERGE-OUTER: succesfull in %zd attempt(s)\n", i);
       Success = true;

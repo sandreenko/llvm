@@ -11,43 +11,38 @@
 #define LLVM_DEBUGINFO_CODEVIEW_DEBUGCROSSIMPSUBSECTION_H
 
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/Support/BinaryStreamArray.h"
 #include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamRef.h"
 #include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include <cstdint>
-#include <vector>
 
 namespace llvm {
-
 namespace codeview {
 
 struct CrossModuleImportItem {
   const CrossModuleImport *Header = nullptr;
-  FixedStreamArray<support::ulittle32_t> Imports;
+  llvm::FixedStreamArray<support::ulittle32_t> Imports;
 };
+}
+}
 
-} // end namespace codeview
-
+namespace llvm {
 template <> struct VarStreamArrayExtractor<codeview::CrossModuleImportItem> {
 public:
-  using ContextType = void;
+  typedef void ContextType;
 
   Error operator()(BinaryStreamRef Stream, uint32_t &Len,
                    codeview::CrossModuleImportItem &Item);
 };
+}
 
+namespace llvm {
 namespace codeview {
-
 class DebugStringTableSubsection;
 
 class DebugCrossModuleImportsSubsectionRef final : public DebugSubsectionRef {
-  using ReferenceArray = VarStreamArray<CrossModuleImportItem>;
-  using Iterator = ReferenceArray::Iterator;
+  typedef VarStreamArray<CrossModuleImportItem> ReferenceArray;
+  typedef ReferenceArray::Iterator Iterator;
 
 public:
   DebugCrossModuleImportsSubsectionRef()
@@ -87,9 +82,7 @@ private:
   DebugStringTableSubsection &Strings;
   StringMap<std::vector<support::ulittle32_t>> Mappings;
 };
+}
+}
 
-} // end namespace codeview
-
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGCROSSIMPSUBSECTION_H
+#endif

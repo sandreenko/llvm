@@ -189,7 +189,7 @@ int PPCTTIImpl::getIntImmCost(unsigned Opcode, unsigned Idx, const APInt &Imm,
   return PPCTTIImpl::getIntImmCost(Imm, Ty);
 }
 
-void PPCTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
+void PPCTTIImpl::getUnrollingPreferences(Loop *L,
                                          TTI::UnrollingPreferences &UP) {
   if (ST->getDarwinDirective() == PPC::DIR_A2) {
     // The A2 is in-order with a deep pipeline, and concatenation unrolling
@@ -201,7 +201,7 @@ void PPCTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
     UP.AllowExpensiveTripCount = true;
   }
 
-  BaseT::getUnrollingPreferences(L, SE, UP);
+  BaseT::getUnrollingPreferences(L, UP);
 }
 
 bool PPCTTIImpl::enableAggressiveInterleaving(bool LoopHasReductions) {

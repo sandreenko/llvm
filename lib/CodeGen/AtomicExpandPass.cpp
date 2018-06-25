@@ -320,10 +320,16 @@ bool AtomicExpand::bracketInstWithFences(Instruction *I, AtomicOrdering Order) {
   auto LeadingFence = TLI->emitLeadingFence(Builder, I, Order);
 
   auto TrailingFence = TLI->emitTrailingFence(Builder, I, Order);
+  // The trailing fence is emitted before the instruction instead of after
+  // because there is no easy way of setting Builder insertion point after
+  // an instruction. So we must erase it from the BB, and insert it back
+  // in the right place.
   // We have a guard here because not every atomic operation generates a
   // trailing fence.
-  if (TrailingFence)
-    TrailingFence->moveAfter(I);
+  if (TrailingFence) {
+    TrailingFence->removeFromParent();
+    TrailingFence->insertAfter(I);
+  }
 
   return (LeadingFence || TrailingFence);
 }
@@ -355,7 +361,7 @@ LoadInst *AtomicExpand::convertAtomicLoadToIntegerType(LoadInst *LI) {
   auto *NewLI = Builder.CreateLoad(NewAddr);
   NewLI->setAlignment(LI->getAlignment());
   NewLI->setVolatile(LI->isVolatile());
-  NewLI->setAtomic(LI->getOrdering(), LI->getSyncScopeID());
+  NewLI->setAtomic(LI->getOrdering(), LI->getSynchScope());
   DEBUG(dbgs() << "Replaced " << *LI << " with " << *NewLI << "\n");
   
   Value *NewVal = Builder.CreateBitCast(NewLI, LI->getType());
@@ -438,7 +444,7 @@ StoreInst *AtomicExpand::convertAtomicStoreToIntegerType(StoreInst *SI) {
   StoreInst *NewSI = Builder.CreateStore(NewVal, NewAddr);
   NewSI->setAlignment(SI->getAlignment());
   NewSI->setVolatile(SI->isVolatile());
-  NewSI->setAtomic(SI->getOrdering(), SI->getSyncScopeID());
+  NewSI->setAtomic(SI->getOrdering(), SI->getSynchScope());
   DEBUG(dbgs() << "Replaced " << *SI << " with " << *NewSI << "\n");
   SI->eraseFromParent();
   return NewSI;
@@ -795,7 +801,7 @@ void AtomicExpand::expandPartwordCmpXchg(AtomicCmpXchgInst *CI) {
   Value *FullWord_Cmp = Builder.CreateOr(Loaded_MaskOut, Cmp_Shifted);
   AtomicCmpXchgInst *NewCI = Builder.CreateAtomicCmpXchg(
       PMV.AlignedAddr, FullWord_Cmp, FullWord_NewVal, CI->getSuccessOrdering(),
-      CI->getFailureOrdering(), CI->getSyncScopeID());
+      CI->getFailureOrdering(), CI->getSynchScope());
   NewCI->setVolatile(CI->isVolatile());
   // When we're building a strong cmpxchg, we need a loop, so you
   // might think we could use a weak cmpxchg inside. But, using strong
@@ -918,7 +924,7 @@ AtomicCmpXchgInst *AtomicExpand::convertCmpXchgToIntegerType(AtomicCmpXchgInst *
   auto *NewCI = Builder.CreateAtomicCmpXchg(NewAddr, NewCmp, NewNewVal,
                                             CI->getSuccessOrdering(),
                                             CI->getFailureOrdering(),
-                                            CI->getSyncScopeID());
+                                            CI->getSynchScope());
   NewCI->setVolatile(CI->isVolatile());
   NewCI->setWeak(CI->isWeak());
   DEBUG(dbgs() << "Replaced " << *CI << " with " << *NewCI << "\n");

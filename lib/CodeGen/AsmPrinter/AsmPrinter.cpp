@@ -87,7 +87,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -273,8 +272,7 @@ bool AsmPrinter::doInitialization(Module &M) {
   // don't, this at least helps the user find where a global came from.
   if (MAI->hasSingleParameterDotFile()) {
     // .file "foo.c"
-    OutStreamer->EmitFileDirective(
-        llvm::sys::path::filename(M.getSourceFileName()));
+    OutStreamer->EmitFileDirective(M.getSourceFileName());
   }
 
   GCModuleInfo *MI = getAnalysisIfAvailable<GCModuleInfo>();
@@ -633,9 +631,7 @@ void AsmPrinter::EmitFunctionHeader() {
   const Function *F = MF->getFunction();
 
   if (isVerbose())
-    OutStreamer->GetCommentOS()
-        << "-- Begin function "
-        << GlobalValue::dropLLVMManglingEscape(F->getName()) << '\n';
+    OutStreamer->GetCommentOS() << "-- Begin function " << F->getName() << '\n';
 
   // Print out constants referenced by the function
   EmitConstantPool();
@@ -903,7 +899,7 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
   return true;
 }
 
-AsmPrinter::CFIMoveType AsmPrinter::needsCFIMoves() const {
+AsmPrinter::CFIMoveType AsmPrinter::needsCFIMoves() {
   if (MAI->getExceptionHandlingType() == ExceptionHandling::DwarfCFI &&
       MF->getFunction()->needsUnwindTableEntry())
     return CFI_M_EH;

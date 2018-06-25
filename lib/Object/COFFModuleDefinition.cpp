@@ -22,7 +22,6 @@
 #include "llvm/Object/COFFImportFile.h"
 #include "llvm/Object/Error.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm::COFF;
@@ -56,10 +55,8 @@ struct Token {
   StringRef Value;
 };
 
-static bool isDecorated(StringRef Sym, bool MingwDef) {
-  // mingw does not prepend "_".
-  return (!MingwDef && Sym.startswith("_")) || Sym.startswith("@") ||
-         Sym.startswith("?");
+static bool isDecorated(StringRef Sym) {
+  return Sym.startswith("_") || Sym.startswith("@") || Sym.startswith("?");
 }
 
 static Error createError(const Twine &Err) {
@@ -86,9 +83,6 @@ public:
     }
     case '=':
       Buf = Buf.drop_front();
-      // GNU dlltool accepts both = and ==.
-      if (Buf.startswith("="))
-        Buf = Buf.drop_front();
       return Token(Equal, "=");
     case ',':
       Buf = Buf.drop_front();
@@ -126,8 +120,7 @@ private:
 
 class Parser {
 public:
-  explicit Parser(StringRef S, MachineTypes M, bool B)
-      : Lex(S), Machine(M), MingwDef(B) {}
+  explicit Parser(StringRef S, MachineTypes M) : Lex(S), Machine(M) {}
 
   Expected<COFFModuleDefinition> parse() {
     do {
@@ -188,17 +181,14 @@ private:
       std::string Name;
       if (Error Err = parseName(&Name, &Info.ImageBase))
         return Err;
-
-      Info.ImportName = Name;
+      // Append the appropriate file extension if not already present.
+      StringRef Ext = IsDll ? ".dll" : ".exe";
+      if (!StringRef(Name).endswith_lower(Ext))
+        Name += Ext;
 
       // Set the output file, but don't override /out if it was already passed.
-      if (Info.OutputFile.empty()) {
+      if (Info.OutputFile.empty())
         Info.OutputFile = Name;
-        // Append the appropriate file extension if not already present.
-        if (!sys::path::has_extension(Name))
-          Info.OutputFile += IsDll ? ".dll" : ".exe";
-      }
-
       return Error::success();
     }
     case KwVersion:
@@ -223,22 +213,16 @@ private:
     }
 
     if (Machine == IMAGE_FILE_MACHINE_I386) {
-      if (!isDecorated(E.Name, MingwDef))
+      if (!isDecorated(E.Name))
         E.Name = (std::string("_").append(E.Name));
-      if (!E.ExtName.empty() && !isDecorated(E.ExtName, MingwDef))
+      if (!E.ExtName.empty() && !isDecorated(E.ExtName))
         E.ExtName = (std::string("_").append(E.ExtName));
     }
 
     for (;;) {
       read();
       if (Tok.K == Identifier && Tok.Value[0] == '@') {
-        if (Tok.Value.drop_front().getAsInteger(10, E.Ordinal)) {
-          // Not an ordinal modifier at all, but the next export (fastcall
-          // decorated) - complete the current one.
-          unget();
-          Info.Exports.push_back(E);
-          return Error::success();
-        }
+        Tok.Value.drop_front().getAsInteger(10, E.Ordinal);
         read();
         if (Tok.K == KwNoname) {
           E.Noname = true;
@@ -324,13 +308,11 @@ private:
   std::vector<Token> Stack;
   MachineTypes Machine;
   COFFModuleDefinition Info;
-  bool MingwDef;
 };
 
 Expected<COFFModuleDefinition> parseCOFFModuleDefinition(MemoryBufferRef MB,
-                                                         MachineTypes Machine,
-                                                         bool MingwDef) {
-  return Parser(MB.getBuffer(), Machine, MingwDef).parse();
+                                                         MachineTypes Machine) {
+  return Parser(MB.getBuffer(), Machine).parse();
 }
 
 } // namespace object

@@ -1,4 +1,4 @@
-//===- DWARFUnit.cpp ------------------------------------------------------===//
+//===-- DWARFUnit.cpp -----------------------------------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
@@ -16,6 +17,8 @@
 #include "llvm/DebugInfo/DWARF/DWARFDebugInfoEntry.h"
 #include "llvm/DebugInfo/DWARF/DWARFDie.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Path.h"
 #include <algorithm>
@@ -23,85 +26,83 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <utility>
 #include <vector>
 
 using namespace llvm;
 using namespace dwarf;
 
 void DWARFUnitSectionBase::parse(DWARFContext &C, const DWARFSection &Section) {
-  const DWARFObject &D = C.getDWARFObj();
-  parseImpl(C, Section, C.getDebugAbbrev(), &D.getRangeSection(),
-            D.getStringSection(), D.getStringOffsetSection(),
-            &D.getAddrSection(), D.getLineSection(), D.isLittleEndian(), false);
+  parseImpl(C, Section, C.getDebugAbbrev(), &C.getRangeSection(),
+            C.getStringSection(), C.getStringOffsetSection(),
+            &C.getAddrSection(), C.getLineSection().Data, C.isLittleEndian(),
+            false);
 }
 
 void DWARFUnitSectionBase::parseDWO(DWARFContext &C,
                                     const DWARFSection &DWOSection,
                                     DWARFUnitIndex *Index) {
-  const DWARFObject &D = C.getDWARFObj();
-  parseImpl(C, DWOSection, C.getDebugAbbrevDWO(), &D.getRangeDWOSection(),
-            D.getStringDWOSection(), D.getStringOffsetDWOSection(),
-            &D.getAddrSection(), D.getLineDWOSection(), C.isLittleEndian(),
+  parseImpl(C, DWOSection, C.getDebugAbbrevDWO(), &C.getRangeDWOSection(),
+            C.getStringDWOSection(), C.getStringOffsetDWOSection(),
+            &C.getAddrSection(), C.getLineDWOSection().Data, C.isLittleEndian(),
             true);
 }
 
 DWARFUnit::DWARFUnit(DWARFContext &DC, const DWARFSection &Section,
                      const DWARFDebugAbbrev *DA, const DWARFSection *RS,
                      StringRef SS, const DWARFSection &SOS,
-                     const DWARFSection *AOS, const DWARFSection &LS, bool LE,
-                     bool IsDWO, const DWARFUnitSectionBase &UnitSection,
+                     const DWARFSection *AOS, StringRef LS, bool LE, bool IsDWO,
+                     const DWARFUnitSectionBase &UnitSection,
                      const DWARFUnitIndex::Entry *IndexEntry)
     : Context(DC), InfoSection(Section), Abbrev(DA), RangeSection(RS),
       LineSection(LS), StringSection(SS), StringOffsetSection(SOS),
-      AddrOffsetSection(AOS), isLittleEndian(LE), isDWO(IsDWO),
-      UnitSection(UnitSection), IndexEntry(IndexEntry) {
+      StringOffsetSectionBase(0), AddrOffsetSection(AOS), isLittleEndian(LE),
+      isDWO(IsDWO), UnitSection(UnitSection), IndexEntry(IndexEntry) {
   clear();
 }
 
 DWARFUnit::~DWARFUnit() = default;
 
-DWARFDataExtractor DWARFUnit::getDebugInfoExtractor() const {
-  return DWARFDataExtractor(Context.getDWARFObj(), InfoSection, isLittleEndian,
-                            getAddressByteSize());
-}
-
 bool DWARFUnit::getAddrOffsetSectionItem(uint32_t Index,
                                                 uint64_t &Result) const {
-  uint32_t Offset = AddrOffsetSectionBase + Index * getAddressByteSize();
-  if (AddrOffsetSection->Data.size() < Offset + getAddressByteSize())
+  uint32_t Offset = AddrOffsetSectionBase + Index * AddrSize;
+  if (AddrOffsetSection->Data.size() < Offset + AddrSize)
     return false;
-  DWARFDataExtractor DA(Context.getDWARFObj(), *AddrOffsetSection,
-                        isLittleEndian, getAddressByteSize());
-  Result = DA.getRelocatedAddress(&Offset);
+  DataExtractor DA(AddrOffsetSection->Data, isLittleEndian, AddrSize);
+  Result = getRelocatedValue(DA, AddrSize, &Offset, &AddrOffsetSection->Relocs);
   return true;
 }
 
 bool DWARFUnit::getStringOffsetSectionItem(uint32_t Index,
                                            uint64_t &Result) const {
-  unsigned ItemSize = getDwarfOffsetByteSize();
+  unsigned ItemSize = getFormat() == DWARF64 ? 8 : 4;
   uint32_t Offset = StringOffsetSectionBase + Index * ItemSize;
   if (StringOffsetSection.Data.size() < Offset + ItemSize)
     return false;
-  DWARFDataExtractor DA(Context.getDWARFObj(), StringOffsetSection,
-                        isLittleEndian, 0);
-  Result = DA.getRelocatedValue(ItemSize, &Offset);
+  DataExtractor DA(StringOffsetSection.Data, isLittleEndian, 0);
+  Result = ItemSize == 4 ? DA.getU32(&Offset) : DA.getU64(&Offset);
   return true;
+}
+
+uint64_t DWARFUnit::getStringOffsetSectionRelocation(uint32_t Index) const {
+  unsigned ItemSize = getFormat() == DWARF64 ? 8 : 4;
+  uint64_t ByteOffset = StringOffsetSectionBase + Index * ItemSize;
+  RelocAddrMap::const_iterator AI = getStringOffsetsRelocMap().find(ByteOffset);
+  if (AI != getStringOffsetsRelocMap().end())
+    return AI->second.Value;
+  return 0;
 }
 
 bool DWARFUnit::extractImpl(DataExtractor debug_info, uint32_t *offset_ptr) {
   Length = debug_info.getU32(offset_ptr);
-  // FIXME: Support DWARF64.
-  FormParams.Format = DWARF32;
-  FormParams.Version = debug_info.getU16(offset_ptr);
+  Version = debug_info.getU16(offset_ptr);
   uint64_t AbbrOffset;
-  if (FormParams.Version >= 5) {
+  if (Version >= 5) {
     UnitType = debug_info.getU8(offset_ptr);
-    FormParams.AddrSize = debug_info.getU8(offset_ptr);
+    AddrSize = debug_info.getU8(offset_ptr);
     AbbrOffset = debug_info.getU32(offset_ptr);
   } else {
     AbbrOffset = debug_info.getU32(offset_ptr);
-    FormParams.AddrSize = debug_info.getU8(offset_ptr);
+    AddrSize = debug_info.getU8(offset_ptr);
   }
   if (IndexEntry) {
     if (AbbrOffset)
@@ -116,14 +117,14 @@ bool DWARFUnit::extractImpl(DataExtractor debug_info, uint32_t *offset_ptr) {
   }
 
   bool LengthOK = debug_info.isValidOffset(getNextUnitOffset() - 1);
-  bool VersionOK = DWARFContext::isSupportedVersion(getVersion());
-  bool AddrSizeOK = getAddressByteSize() == 4 || getAddressByteSize() == 8;
+  bool VersionOK = DWARFContext::isSupportedVersion(Version);
+  bool AddrSizeOK = AddrSize == 4 || AddrSize == 8;
 
   if (!LengthOK || !VersionOK || !AddrSizeOK)
     return false;
 
   // Keep track of the highest DWARF version we encounter across all units.
-  Context.setMaxVersionIfGreater(getVersion());
+  Context.setMaxVersionIfGreater(Version);
 
   Abbrevs = Abbrev->getAbbreviationDeclarationSet(AbbrOffset);
   return Abbrevs != nullptr;
@@ -146,20 +147,21 @@ bool DWARFUnit::extract(DataExtractor debug_info, uint32_t *offset_ptr) {
 }
 
 bool DWARFUnit::extractRangeList(uint32_t RangeListOffset,
-                                 DWARFDebugRangeList &RangeList) const {
+                                        DWARFDebugRangeList &RangeList) const {
   // Require that compile unit is extracted.
   assert(!DieArray.empty());
-  DWARFDataExtractor RangesData(Context.getDWARFObj(), *RangeSection,
-                                isLittleEndian, getAddressByteSize());
+  DataExtractor RangesData(RangeSection->Data, isLittleEndian, AddrSize);
   uint32_t ActualRangeListOffset = RangeSectionBase + RangeListOffset;
-  return RangeList.extract(RangesData, &ActualRangeListOffset);
+  return RangeList.extract(RangesData, &ActualRangeListOffset,
+                           RangeSection->Relocs);
 }
 
 void DWARFUnit::clear() {
   Offset = 0;
   Length = 0;
+  Version = 0;
   Abbrevs = nullptr;
-  FormParams = DWARFFormParams({0, 0, DWARF32});
+  AddrSize = 0;
   BaseAddr = 0;
   RangeSectionBase = 0;
   AddrOffsetSectionBase = 0;
@@ -186,7 +188,7 @@ void DWARFUnit::extractDIEsToVector(
   uint32_t DIEOffset = Offset + getHeaderSize();
   uint32_t NextCUOffset = getNextUnitOffset();
   DWARFDebugInfoEntry DIE;
-  DWARFDataExtractor DebugInfoData = getDebugInfoExtractor();
+  DataExtractor DebugInfoData = getDebugInfoExtractor();
   uint32_t Depth = 0;
   bool IsCUDie = true;
 
@@ -245,13 +247,8 @@ size_t DWARFUnit::extractDIEsIfNeeded(bool CUDieOnly) {
     auto BaseAddr = toAddress(UnitDie.find({DW_AT_low_pc, DW_AT_entry_pc}));
     if (BaseAddr)
       setBaseAddress(*BaseAddr);
-    if (!isDWO) {
-      assert(AddrOffsetSectionBase == 0);
-      assert(RangeSectionBase == 0);
-      AddrOffsetSectionBase =
-          toSectionOffset(UnitDie.find(DW_AT_GNU_addr_base), 0);
-      RangeSectionBase = toSectionOffset(UnitDie.find(DW_AT_rnglists_base), 0);
-    }
+    AddrOffsetSectionBase = toSectionOffset(UnitDie.find(DW_AT_GNU_addr_base), 0);
+    RangeSectionBase = toSectionOffset(UnitDie.find(DW_AT_rnglists_base), 0);
 
     // In general, we derive the offset of the unit's contibution to the
     // debug_str_offsets{.dwo} section from the unit DIE's
@@ -308,8 +305,18 @@ bool DWARFUnit::parseDWO() {
 
 void DWARFUnit::clearDIEs(bool KeepCUDie) {
   if (DieArray.size() > (unsigned)KeepCUDie) {
-    DieArray.resize((unsigned)KeepCUDie);
-    DieArray.shrink_to_fit();
+    // std::vectors never get any smaller when resized to a smaller size,
+    // or when clear() or erase() are called, the size will report that it
+    // is smaller, but the memory allocated remains intact (call capacity()
+    // to see this). So we need to create a temporary vector and swap the
+    // contents which will cause just the internal pointers to be swapped
+    // so that when temporary vector goes out of scope, it will destroy the
+    // contents.
+    std::vector<DWARFDebugInfoEntry> TmpArray;
+    DieArray.swap(TmpArray);
+    // Save at least the compile unit DIE
+    if (KeepCUDie)
+      DieArray.push_back(TmpArray.front());
   }
 }
 

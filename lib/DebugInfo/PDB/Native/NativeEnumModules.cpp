@@ -32,7 +32,9 @@ std::unique_ptr<PDBSymbol>
 NativeEnumModules::getChildAtIndex(uint32_t Index) const {
   if (Index >= Modules.getModuleCount())
     return nullptr;
-  return Session.createCompilandSymbol(Modules.getModuleDescriptor(Index));
+  return std::unique_ptr<PDBSymbol>(new PDBSymbolCompiland(
+      Session, std::unique_ptr<IPDBRawSymbol>(new NativeCompilandSymbol(
+                   Session, Modules.getModuleDescriptor(Index)))));
 }
 
 std::unique_ptr<PDBSymbol> NativeEnumModules::getNext() {

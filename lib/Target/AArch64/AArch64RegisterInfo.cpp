@@ -35,9 +35,7 @@ using namespace llvm;
 #include "AArch64GenRegisterInfo.inc"
 
 AArch64RegisterInfo::AArch64RegisterInfo(const Triple &TT)
-    : AArch64GenRegisterInfo(AArch64::LR), TT(TT) {
-  AArch64_MC::initLLVMToCVRegMapping(this);
-}
+    : AArch64GenRegisterInfo(AArch64::LR), TT(TT) {}
 
 const MCPhysReg *
 AArch64RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
@@ -76,7 +74,7 @@ const uint32_t *
 AArch64RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
                                           CallingConv::ID CC) const {
   if (CC == CallingConv::GHC)
-    // This is academic because all GHC calls are (supposed to be) tail calls
+    // This is academic becase all GHC calls are (supposed to be) tail calls
     return CSR_AArch64_NoRegs_RegMask;
   if (CC == CallingConv::AnyReg)
     return CSR_AArch64_AllRegs_RegMask;
@@ -96,7 +94,7 @@ const uint32_t *AArch64RegisterInfo::getTLSCallPreservedMask() const {
   if (TT.isOSDarwin())
     return CSR_AArch64_TLS_Darwin_RegMask;
 
-  assert(TT.isOSBinFormatELF() && "Invalid target");
+  assert(TT.isOSBinFormatELF() && "only expect Darwin or ELF TLS");
   return CSR_AArch64_TLS_ELF_RegMask;
 }
 
@@ -169,7 +167,7 @@ bool AArch64RegisterInfo::isConstantPhysReg(unsigned PhysReg) const {
 const TargetRegisterClass *
 AArch64RegisterInfo::getPointerRegClass(const MachineFunction &MF,
                                       unsigned Kind) const {
-  return &AArch64::GPR64spRegClass;
+  return &AArch64::GPR64RegClass;
 }
 
 const TargetRegisterClass *

@@ -31,7 +31,6 @@ class MachineFunctionPass;
 
 FunctionPass *createAArch64DeadRegisterDefinitions();
 FunctionPass *createAArch64RedundantCopyEliminationPass();
-FunctionPass *createAArch64CondBrTuning();
 FunctionPass *createAArch64ConditionalCompares();
 FunctionPass *createAArch64AdvSIMDScalar();
 FunctionPass *createAArch64ISelDag(AArch64TargetMachine &TM,
@@ -44,8 +43,6 @@ ModulePass *createAArch64PromoteConstantPass();
 FunctionPass *createAArch64ConditionOptimizerPass();
 FunctionPass *createAArch64A57FPLoadBalancing();
 FunctionPass *createAArch64A53Fix835769();
-FunctionPass *createFalkorHWPFFixPass();
-FunctionPass *createFalkorMarkStridedAccessesPass();
 
 FunctionPass *createAArch64CleanupLocalDynamicTLSPass();
 
@@ -58,7 +55,6 @@ void initializeAArch64A53Fix835769Pass(PassRegistry&);
 void initializeAArch64A57FPLoadBalancingPass(PassRegistry&);
 void initializeAArch64AdvSIMDScalarPass(PassRegistry&);
 void initializeAArch64CollectLOHPass(PassRegistry&);
-void initializeAArch64CondBrTuningPass(PassRegistry &);
 void initializeAArch64ConditionalComparesPass(PassRegistry&);
 void initializeAArch64ConditionOptimizerPass(PassRegistry&);
 void initializeAArch64DeadRegisterDefinitionsPass(PassRegistry&);
@@ -68,8 +64,6 @@ void initializeAArch64VectorByElementOptPass(PassRegistry&);
 void initializeAArch64PromoteConstantPass(PassRegistry&);
 void initializeAArch64RedundantCopyEliminationPass(PassRegistry&);
 void initializeAArch64StorePairSuppressPass(PassRegistry&);
-void initializeFalkorHWPFFixPass(PassRegistry&);
-void initializeFalkorMarkStridedAccessesLegacyPass(PassRegistry&);
 void initializeLDTLSCleanupPass(PassRegistry&);
 } // end namespace llvm
 

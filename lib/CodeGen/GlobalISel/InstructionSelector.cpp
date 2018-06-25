@@ -1,4 +1,4 @@
-//===- llvm/CodeGen/GlobalISel/InstructionSelector.cpp --------------------===//
+//===- llvm/CodeGen/GlobalISel/InstructionSelector.cpp -----------*- C++ -*-==//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,29 +11,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
+#include "llvm/CodeGen/GlobalISel/RegisterBankInfo.h"
 #include "llvm/CodeGen/GlobalISel/Utils.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineOperand.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/MC/MCInstrDesc.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include <cassert>
 
 #define DEBUG_TYPE "instructionselector"
 
 using namespace llvm;
 
-InstructionSelector::MatcherState::MatcherState(unsigned MaxRenderers)
-    : Renderers(MaxRenderers, nullptr), MIs() {}
-
-InstructionSelector::InstructionSelector() = default;
+InstructionSelector::InstructionSelector() {}
 
 bool InstructionSelector::constrainOperandRegToRegClass(
     MachineInstr &I, unsigned OpIdx, const TargetRegisterClass &RC,
@@ -43,8 +33,8 @@ bool InstructionSelector::constrainOperandRegToRegClass(
   MachineFunction &MF = *MBB.getParent();
   MachineRegisterInfo &MRI = MF.getRegInfo();
 
-  return
-      constrainRegToClass(MRI, TII, RBI, I, I.getOperand(OpIdx).getReg(), RC);
+  return llvm::constrainRegToClass(MRI, TII, RBI, I,
+                                   I.getOperand(OpIdx).getReg(), RC);
 }
 
 bool InstructionSelector::constrainSelectedInstRegOperands(
@@ -94,6 +84,7 @@ bool InstructionSelector::constrainSelectedInstRegOperands(
 bool InstructionSelector::isOperandImmEqual(
     const MachineOperand &MO, int64_t Value,
     const MachineRegisterInfo &MRI) const {
+
   if (MO.isReg() && MO.getReg())
     if (auto VRegVal = getConstantVRegVal(MO.getReg(), MRI))
       return *VRegVal == Value;

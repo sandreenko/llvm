@@ -16,7 +16,6 @@
 #include "llvm/DebugInfo/MSF/MSFCommon.h"
 #include "llvm/DebugInfo/MSF/MappedBlockStream.h"
 #include "llvm/DebugInfo/PDB/Native/DbiModuleDescriptor.h"
-#include "llvm/DebugInfo/PDB/Native/GSIStreamBuilder.h"
 #include "llvm/DebugInfo/PDB/Native/RawConstants.h"
 #include "llvm/DebugInfo/PDB/Native/RawError.h"
 #include "llvm/Support/BinaryItemStream.h"
@@ -26,6 +25,16 @@ using namespace llvm;
 using namespace llvm::codeview;
 using namespace llvm::msf;
 using namespace llvm::pdb;
+
+namespace llvm {
+template <> struct BinaryItemTraits<CVSymbol> {
+  static size_t length(const CVSymbol &Item) { return Item.RecordData.size(); }
+
+  static ArrayRef<uint8_t> bytes(const CVSymbol &Item) {
+    return Item.RecordData;
+  }
+};
+}
 
 static uint32_t calculateDiSymbolStreamSize(uint32_t SymbolByteSize,
                                             uint32_t C13Size) {
@@ -54,10 +63,6 @@ uint16_t DbiModuleDescriptorBuilder::getStreamIndex() const {
 
 void DbiModuleDescriptorBuilder::setObjFileName(StringRef Name) {
   ObjFileName = Name;
-}
-
-void DbiModuleDescriptorBuilder::setPdbFilePathNI(uint32_t NI) {
-  PdbFilePathNI = NI;
 }
 
 void DbiModuleDescriptorBuilder::addSymbol(CVSymbol Symbol) {
@@ -106,7 +111,7 @@ void DbiModuleDescriptorBuilder::finalize() {
   (void)Layout.Mod;         // Set in constructor
   (void)Layout.ModDiStream; // Set in finalizeMsfLayout
   Layout.NumFiles = SourceFiles.size();
-  Layout.PdbFilePathNI = PdbFilePathNI;
+  Layout.PdbFilePathNI = 0;
   Layout.SrcFileNameNI = 0;
 
   // This value includes both the signature field as well as the record bytes

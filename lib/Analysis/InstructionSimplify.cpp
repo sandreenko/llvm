@@ -23,7 +23,6 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/CaptureTracking.h"
-#include "llvm/Analysis/CmpInstAnalysis.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -561,7 +560,7 @@ static Value *SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
     return Y;
 
   /// i1 add -> xor.
-  if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
+  if (MaxRecurse && Op0->getType()->getScalarType()->isIntegerTy(1))
     if (Value *V = SimplifyXorInst(Op0, Op1, Q, MaxRecurse-1))
       return V;
 
@@ -599,7 +598,7 @@ Value *llvm::SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
 /// folding.
 static Constant *stripAndComputeConstantOffsets(const DataLayout &DL, Value *&V,
                                                 bool AllowNonInbounds = false) {
-  assert(V->getType()->isPtrOrPtrVectorTy());
+  assert(V->getType()->getScalarType()->isPointerTy());
 
   Type *IntPtrTy = DL.getIntPtrType(V->getType())->getScalarType();
   APInt Offset = APInt::getNullValue(IntPtrTy->getIntegerBitWidth());
@@ -628,7 +627,8 @@ static Constant *stripAndComputeConstantOffsets(const DataLayout &DL, Value *&V,
         }
       break;
     }
-    assert(V->getType()->isPtrOrPtrVectorTy() && "Unexpected operand type!");
+    assert(V->getType()->getScalarType()->isPointerTy() &&
+           "Unexpected operand type!");
   } while (Visited.insert(V).second);
 
   Constant *OffsetIntPtr = ConstantInt::get(IntPtrTy, Offset);
@@ -771,7 +771,7 @@ static Value *SimplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
       return ConstantExpr::getIntegerCast(Result, Op0->getType(), true);
 
   // i1 sub -> xor.
-  if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
+  if (MaxRecurse && Op0->getType()->getScalarType()->isIntegerTy(1))
     if (Value *V = SimplifyXorInst(Op0, Op1, Q, MaxRecurse-1))
       return V;
 
@@ -902,7 +902,7 @@ static Value *SimplifyMulInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
     return X;
 
   // i1 mul -> and.
-  if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
+  if (MaxRecurse && Op0->getType()->getScalarType()->isIntegerTy(1))
     if (Value *V = SimplifyAndInst(Op0, Op1, Q, MaxRecurse-1))
       return V;
 
@@ -998,7 +998,7 @@ static Value *simplifyDivRem(Value *Op0, Value *Op1, bool IsDiv) {
   // X % 1 -> 0
   // If this is a boolean op (single-bit element type), we can't have
   // division-by-zero or remainder-by-zero, so assume the divisor is 1.
-  if (match(Op1, m_One()) || Ty->isIntOrIntVectorTy(1))
+  if (match(Op1, m_One()) || Ty->getScalarType()->isIntegerTy(1))
     return IsDiv ? Op0 : Constant::getNullValue(Ty);
 
   return nullptr;
@@ -1746,11 +1746,14 @@ static Value *SimplifyAndInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
     return Constant::getNullValue(Op0->getType());
 
   // (A | ?) & A = A
-  if (match(Op0, m_c_Or(m_Specific(Op1), m_Value())))
+  Value *A = nullptr, *B = nullptr;
+  if (match(Op0, m_Or(m_Value(A), m_Value(B))) &&
+      (A == Op1 || B == Op1))
     return Op1;
 
   // A & (A | ?) = A
-  if (match(Op1, m_c_Or(m_Specific(Op0), m_Value())))
+  if (match(Op1, m_Or(m_Value(A), m_Value(B))) &&
+      (A == Op0 || B == Op0))
     return Op0;
 
   // A mask that only clears known zeros of a shifted value is a no-op.
@@ -1850,22 +1853,26 @@ static Value *SimplifyOrInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
     return Constant::getAllOnesValue(Op0->getType());
 
   // (A & ?) | A = A
-  if (match(Op0, m_c_And(m_Specific(Op1), m_Value())))
+  Value *A = nullptr, *B = nullptr;
+  if (match(Op0, m_And(m_Value(A), m_Value(B))) &&
+      (A == Op1 || B == Op1))
     return Op1;
 
   // A | (A & ?) = A
-  if (match(Op1, m_c_And(m_Specific(Op0), m_Value())))
+  if (match(Op1, m_And(m_Value(A), m_Value(B))) &&
+      (A == Op0 || B == Op0))
     return Op0;
 
   // ~(A & ?) | A = -1
-  if (match(Op0, m_Not(m_c_And(m_Specific(Op1), m_Value()))))
+  if (match(Op0, m_Not(m_And(m_Value(A), m_Value(B)))) &&
+      (A == Op1 || B == Op1))
     return Constant::getAllOnesValue(Op1->getType());
 
   // A | ~(A & ?) = -1
-  if (match(Op1, m_Not(m_c_And(m_Specific(Op1), m_Value()))))
+  if (match(Op1, m_Not(m_And(m_Value(A), m_Value(B)))) &&
+      (A == Op0 || B == Op0))
     return Constant::getAllOnesValue(Op0->getType());
 
-  Value *A, *B;
   // (A & ~B) | (A ^ B) -> (A ^ B)
   // (~B & A) | (A ^ B) -> (A ^ B)
   // (A & ~B) | (B ^ A) -> (B ^ A)
@@ -2244,7 +2251,7 @@ static Value *simplifyICmpOfBools(CmpInst::Predicate Pred, Value *LHS,
                                   Value *RHS, const SimplifyQuery &Q) {
   Type *ITy = GetCompareTy(LHS); // The return type.
   Type *OpTy = LHS->getType();   // The operand type.
-  if (!OpTy->isIntOrIntVectorTy(1))
+  if (!OpTy->getScalarType()->isIntegerTy(1))
     return nullptr;
 
   // A boolean compared to true/false can be simplified in 14 out of the 20
@@ -2681,14 +2688,16 @@ static Value *simplifyICmpWithBinOp(CmpInst::Predicate Pred, Value *LHS,
   }
 
   // icmp pred (and X, Y), X
-  if (LBO && match(LBO, m_c_And(m_Value(), m_Specific(RHS)))) {
+  if (LBO && match(LBO, m_CombineOr(m_And(m_Value(), m_Specific(RHS)),
+                                    m_And(m_Specific(RHS), m_Value())))) {
     if (Pred == ICmpInst::ICMP_UGT)
       return getFalse(ITy);
     if (Pred == ICmpInst::ICMP_ULE)
       return getTrue(ITy);
   }
   // icmp pred X, (and X, Y)
-  if (RBO && match(RBO, m_c_And(m_Value(), m_Specific(LHS)))) {
+  if (RBO && match(RBO, m_CombineOr(m_And(m_Value(), m_Specific(LHS)),
+                                    m_And(m_Specific(LHS), m_Value())))) {
     if (Pred == ICmpInst::ICMP_UGE)
       return getTrue(ITy);
     if (Pred == ICmpInst::ICMP_ULT)
@@ -3621,29 +3630,32 @@ static Value *simplifySelectBitTest(Value *TrueVal, Value *FalseVal, Value *X,
 
 /// An alternative way to test if a bit is set or not uses sgt/slt instead of
 /// eq/ne.
-static Value *simplifySelectWithFakeICmpEq(Value *CmpLHS, Value *CmpRHS,
-                                           ICmpInst::Predicate Pred,
-                                           Value *TrueVal, Value *FalseVal) {
-  Value *X;
-  APInt Mask;
-  if (!decomposeBitTestICmp(CmpLHS, CmpRHS, Pred, X, Mask))
-    return nullptr;
-
+static Value *simplifySelectWithFakeICmpEq(Value *CmpLHS, Value *TrueVal,
+                                           Value *FalseVal,
+                                           bool TrueWhenUnset) {
   unsigned BitWidth = TrueVal->getType()->getScalarSizeInBits();
   if (!BitWidth)
     return nullptr;
 
-  Value *ExtX;
-  if (match(X, m_Trunc(m_Value(ExtX))) &&
-      (ExtX == TrueVal || ExtX == FalseVal)) {
+  APInt MinSignedValue;
+  Value *X;
+  if (match(CmpLHS, m_Trunc(m_Value(X))) && (X == TrueVal || X == FalseVal)) {
     // icmp slt (trunc X), 0  <--> icmp ne (and X, C), 0
     // icmp sgt (trunc X), -1 <--> icmp eq (and X, C), 0
-    X = ExtX;
-    Mask = Mask.zext(BitWidth);
+    unsigned DestSize = CmpLHS->getType()->getScalarSizeInBits();
+    MinSignedValue = APInt::getSignedMinValue(DestSize).zext(BitWidth);
+  } else {
+    // icmp slt X, 0  <--> icmp ne (and X, C), 0
+    // icmp sgt X, -1 <--> icmp eq (and X, C), 0
+    X = CmpLHS;
+    MinSignedValue = APInt::getSignedMinValue(BitWidth);
   }
 
-  return simplifySelectBitTest(TrueVal, FalseVal, X, &Mask,
-                               Pred == ICmpInst::ICMP_EQ);
+  if (Value *V = simplifySelectBitTest(TrueVal, FalseVal, X, &MinSignedValue,
+                                       TrueWhenUnset))
+    return V;
+
+  return nullptr;
 }
 
 /// Try to simplify a select instruction when its condition operand is an
@@ -3656,6 +3668,8 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
   if (!match(CondVal, m_ICmp(Pred, m_Value(CmpLHS), m_Value(CmpRHS))))
     return nullptr;
 
+  // FIXME: This code is nearly duplicated in InstCombine. Using/refactoring
+  // decomposeBitTestICmp() might help.
   if (ICmpInst::isEquality(Pred) && match(CmpRHS, m_Zero())) {
     Value *X;
     const APInt *Y;
@@ -3663,12 +3677,17 @@ static Value *simplifySelectWithICmpCond(Value *CondVal, Value *TrueVal,
       if (Value *V = simplifySelectBitTest(TrueVal, FalseVal, X, Y,
                                            Pred == ICmpInst::ICMP_EQ))
         return V;
+  } else if (Pred == ICmpInst::ICMP_SLT && match(CmpRHS, m_Zero())) {
+    // Comparing signed-less-than 0 checks if the sign bit is set.
+    if (Value *V = simplifySelectWithFakeICmpEq(CmpLHS, TrueVal, FalseVal,
+                                                false))
+      return V;
+  } else if (Pred == ICmpInst::ICMP_SGT && match(CmpRHS, m_AllOnes())) {
+    // Comparing signed-greater-than -1 checks if the sign bit is not set.
+    if (Value *V = simplifySelectWithFakeICmpEq(CmpLHS, TrueVal, FalseVal,
+                                                true))
+      return V;
   }
-
-  // Check for other compares that behave like bit test.
-  if (Value *V = simplifySelectWithFakeICmpEq(CmpLHS, CmpRHS, Pred,
-                                              TrueVal, FalseVal))
-    return V;
 
   if (CondVal->hasOneUse()) {
     const APInt *C;

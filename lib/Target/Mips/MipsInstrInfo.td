@@ -220,8 +220,6 @@ def IsSym32     :     Predicate<"Subtarget->HasSym32()">,
                       AssemblerPredicate<"FeatureSym32">;
 def IsSym64     :     Predicate<"!Subtarget->HasSym32()">,
                       AssemblerPredicate<"!FeatureSym32">;
-def IsN64       :     Predicate<"Subtarget->isABI_N64()">;
-def IsNotN64    :     Predicate<"!Subtarget->isABI_N64()">;
 def RelocNotPIC :     Predicate<"!TM.isPositionIndependent()">;
 def RelocPIC    :     Predicate<"TM.isPositionIndependent()">;
 def NoNaNsFPMath :    Predicate<"TM.Options.NoNaNsFPMath">;
@@ -242,8 +240,7 @@ def HasMSA : Predicate<"Subtarget->hasMSA()">,
              AssemblerPredicate<"FeatureMSA">;
 def HasMadd4 : Predicate<"!Subtarget->disableMadd4()">,
                AssemblerPredicate<"!FeatureMadd4">;
-def HasMT  : Predicate<"Subtarget->hasMT()">,
-             AssemblerPredicate<"FeatureMT">;
+
 
 //===----------------------------------------------------------------------===//
 // Mips GPR size adjectives.
@@ -385,10 +382,6 @@ class ASE_MSA64 {
   list<Predicate> InsnPredicates = [HasMSA, HasMips64];
 }
 
-class ASE_MT {
-  list <Predicate> InsnPredicates = [HasMT];
-}
-
 // Class used for separating microMIPSr6 and microMIPS (r3) instruction.
 // It can be used only on instructions that doesn't inherit PredicateControl.
 class ISA_MICROMIPS_NOT_32R6_64R6 : PredicateControl {
@@ -401,16 +394,6 @@ class ASE_NOT_DSP {
 
 class MADD4 {
   list<Predicate> AdditionalPredicates = [HasMadd4];
-}
-
-// Classses used for separating expansions that differ based on the ABI in
-// use.
-class ABI_N64 {
-  list<Predicate> AdditionalPredicates = [IsN64];
-}
-
-class ABI_NOT_N64 {
-  list<Predicate> AdditionalPredicates = [IsNotN64];
 }
 
 //===----------------------------------------------------------------------===//
@@ -2760,9 +2743,9 @@ def : MipsPat<(MipsGotHi texternalsym:$in), (LUi texternalsym:$in)>;
 
 // gp_rel relocs
 def : MipsPat<(add GPR32:$gp, (MipsGPRel tglobaladdr:$in)),
-              (ADDiu GPR32:$gp, tglobaladdr:$in)>, ABI_NOT_N64;
+              (ADDiu GPR32:$gp, tglobaladdr:$in)>;
 def : MipsPat<(add GPR32:$gp, (MipsGPRel tconstpool:$in)),
-              (ADDiu GPR32:$gp, tconstpool:$in)>, ABI_NOT_N64;
+              (ADDiu GPR32:$gp, tconstpool:$in)>;
 
 // wrapper_pic
 class WrapperPat<SDNode node, Instruction ADDiuOp, RegisterClass RC>:
@@ -2935,10 +2918,6 @@ include "MipsMSAInstrInfo.td"
 // EVA
 include "MipsEVAInstrFormats.td"
 include "MipsEVAInstrInfo.td"
-
-// MT
-include "MipsMTInstrFormats.td"
-include "MipsMTInstrInfo.td"
 
 // Micromips
 include "MicroMipsInstrFormats.td"

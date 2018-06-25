@@ -31,7 +31,7 @@ static cl::opt<bool, true> VerifyMachineDomInfoX(
 
 namespace llvm {
 template class DomTreeNodeBase<MachineBasicBlock>;
-template class DominatorTreeBase<MachineBasicBlock, false>; // DomTreeBase
+template class DominatorTreeBase<MachineBasicBlock>;
 }
 
 char MachineDominatorTree::ID = 0;
@@ -49,7 +49,7 @@ void MachineDominatorTree::getAnalysisUsage(AnalysisUsage &AU) const {
 bool MachineDominatorTree::runOnMachineFunction(MachineFunction &F) {
   CriticalEdgesToSplit.clear();
   NewBBs.clear();
-  DT.reset(new DomTreeBase<MachineBasicBlock>());
+  DT.reset(new DominatorTreeBase<MachineBasicBlock>(false));
   DT->recalculate(F);
   return false;
 }
@@ -144,7 +144,7 @@ void MachineDominatorTree::verifyDomTree() const {
     return;
   MachineFunction &F = *getRoot()->getParent();
 
-  DomTreeBase<MachineBasicBlock> OtherDT;
+  DominatorTreeBase<MachineBasicBlock> OtherDT(false);
   OtherDT.recalculate(F);
   if (getRootNode()->getBlock() != OtherDT.getRootNode()->getBlock() ||
       DT->compare(OtherDT)) {

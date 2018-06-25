@@ -154,7 +154,7 @@ public:
   uint32_t getNumberOfObjects() const { return NumberOfObjects; }
 
   // Cast methods.
-  static bool classof(Binary const *V) {
+  static inline bool classof(Binary const *V) {
     return V->isMachOUniversalBinary();
   }
 

@@ -14,7 +14,6 @@
 #ifndef LLVM_LIB_TARGET_AARCH64_MCTARGETDESC_AARCH64MCASMINFO_H
 #define LLVM_LIB_TARGET_AARCH64_MCTARGETDESC_AARCH64MCASMINFO_H
 
-#include "llvm/MC/MCAsmInfoCOFF.h"
 #include "llvm/MC/MCAsmInfoDarwin.h"
 #include "llvm/MC/MCAsmInfoELF.h"
 
@@ -32,18 +31,6 @@ struct AArch64MCAsmInfoDarwin : public MCAsmInfoDarwin {
 
 struct AArch64MCAsmInfoELF : public MCAsmInfoELF {
   explicit AArch64MCAsmInfoELF(const Triple &T);
-};
-
-struct AArch64MCAsmInfoCOFF : public MCAsmInfoCOFF {
-  explicit AArch64MCAsmInfoCOFF();
-};
-
-struct AArch64MCAsmInfoMicrosoftCOFF : public AArch64MCAsmInfoCOFF {
-  explicit AArch64MCAsmInfoMicrosoftCOFF();
-};
-
-struct AArch64MCAsmInfoGNUCOFF : public AArch64MCAsmInfoCOFF {
-  explicit AArch64MCAsmInfoGNUCOFF();
 };
 
 } // namespace llvm

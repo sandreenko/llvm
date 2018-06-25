@@ -14,7 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "NVPTXLowerAggrCopies.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/StackProtector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -43,7 +42,6 @@ struct NVPTXLowerAggrCopies : public FunctionPass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addPreserved<StackProtector>();
-    AU.addRequired<TargetTransformInfoWrapperPass>();
   }
 
   bool runOnFunction(Function &F) override;
@@ -63,8 +61,6 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
 
   const DataLayout &DL = F.getParent()->getDataLayout();
   LLVMContext &Context = F.getParent()->getContext();
-  const TargetTransformInfo &TTI =
-      getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
 
   // Collect all aggregate loads and mem* calls.
   for (Function::iterator BI = F.begin(), BE = F.end(); BI != BE; ++BI) {
@@ -108,26 +104,15 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
     Value *SrcAddr = LI->getOperand(0);
     Value *DstAddr = SI->getOperand(1);
     unsigned NumLoads = DL.getTypeStoreSize(LI->getType());
-    ConstantInt *CopyLen =
-        ConstantInt::get(Type::getInt32Ty(Context), NumLoads);
+    Value *CopyLen = ConstantInt::get(Type::getInt32Ty(Context), NumLoads);
 
-    if (!TTI.useWideIRMemcpyLoopLowering()) {
-      createMemCpyLoop(/* ConvertedInst */ SI,
-                       /* SrcAddr */ SrcAddr, /* DstAddr */ DstAddr,
-                       /* CopyLen */ CopyLen,
-                       /* SrcAlign */ LI->getAlignment(),
-                       /* DestAlign */ SI->getAlignment(),
-                       /* SrcIsVolatile */ LI->isVolatile(),
-                       /* DstIsVolatile */ SI->isVolatile());
-    } else {
-      createMemCpyLoopKnownSize(/* ConvertedInst */ SI,
-                                /* SrcAddr */ SrcAddr, /* DstAddr */ DstAddr,
-                                /* CopyLen */ CopyLen,
-                                /* SrcAlign */ LI->getAlignment(),
-                                /* DestAlign */ SI->getAlignment(),
-                                /* SrcIsVolatile */ LI->isVolatile(),
-                                /* DstIsVolatile */ SI->isVolatile(), TTI);
-    }
+    createMemCpyLoop(/* ConvertedInst */ SI,
+                     /* SrcAddr */ SrcAddr, /* DstAddr */ DstAddr,
+                     /* CopyLen */ CopyLen,
+                     /* SrcAlign */ LI->getAlignment(),
+                     /* DestAlign */ SI->getAlignment(),
+                     /* SrcIsVolatile */ LI->isVolatile(),
+                     /* DstIsVolatile */ SI->isVolatile());
 
     SI->eraseFromParent();
     LI->eraseFromParent();
@@ -136,7 +121,7 @@ bool NVPTXLowerAggrCopies::runOnFunction(Function &F) {
   // Transform mem* intrinsic calls.
   for (MemIntrinsic *MemCall : MemCalls) {
     if (MemCpyInst *Memcpy = dyn_cast<MemCpyInst>(MemCall)) {
-      expandMemCpyAsLoop(Memcpy, TTI);
+      expandMemCpyAsLoop(Memcpy);
     } else if (MemMoveInst *Memmove = dyn_cast<MemMoveInst>(MemCall)) {
       expandMemMoveAsLoop(Memmove);
     } else if (MemSetInst *Memset = dyn_cast<MemSetInst>(MemCall)) {

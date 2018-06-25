@@ -18,7 +18,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/GlobalISel/RegisterBank.h"
@@ -140,8 +139,6 @@ class MIPrinter {
   ModuleSlotTracker &MST;
   const DenseMap<const uint32_t *, unsigned> &RegisterMaskIds;
   const DenseMap<int, FrameIndexOperand> &StackObjectOperandMapping;
-  /// Synchronization scope names registered with LLVMContext.
-  SmallVector<StringRef, 8> SSNs;
 
   bool canPredictBranchProbabilities(const MachineBasicBlock &MBB) const;
   bool canPredictSuccessors(const MachineBasicBlock &MBB) const;
@@ -165,9 +162,7 @@ public:
   void print(const MachineOperand &Op, const TargetRegisterInfo *TRI,
              unsigned I, bool ShouldPrintRegisterTies,
              LLT TypeToPrint, bool IsDef = false);
-  void print(const LLVMContext &Context, const TargetInstrInfo &TII,
-             const MachineMemOperand &Op);
-  void printSyncScope(const LLVMContext &Context, SyncScope::ID SSID);
+  void print(const MachineMemOperand &Op);
 
   void print(const MCCFIInstruction &CFI, const TargetRegisterInfo *TRI);
 };
@@ -366,7 +361,6 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
     YamlObject.Offset = MFI.getObjectOffset(I);
     YamlObject.Size = MFI.getObjectSize(I);
     YamlObject.Alignment = MFI.getObjectAlignment(I);
-    YamlObject.StackID = MFI.getStackID(I);
     YamlObject.IsImmutable = MFI.isImmutableObjectIndex(I);
     YamlObject.IsAliased = MFI.isAliasedObjectIndex(I);
     YMF.FixedStackObjects.push_back(YamlObject);
@@ -393,7 +387,6 @@ void MIRPrinter::convertStackObjects(yaml::MachineFunction &YMF,
     YamlObject.Offset = MFI.getObjectOffset(I);
     YamlObject.Size = MFI.getObjectSize(I);
     YamlObject.Alignment = MFI.getObjectAlignment(I);
-    YamlObject.StackID = MFI.getStackID(I);
 
     YMF.StackObjects.push_back(YamlObject);
     StackObjectOperandMapping.insert(std::make_pair(
@@ -458,20 +451,17 @@ void MIRPrinter::convert(yaml::MachineFunction &MF,
                          const MachineConstantPool &ConstantPool) {
   unsigned ID = 0;
   for (const MachineConstantPoolEntry &Constant : ConstantPool.getConstants()) {
-    std::string Str;
-    raw_string_ostream StrOS(Str);
-    if (Constant.isMachineConstantPoolEntry()) {
-      Constant.Val.MachineCPVal->print(StrOS);
-    } else {
-      Constant.Val.ConstVal->printAsOperand(StrOS);
-    }
+    // TODO: Serialize target specific constant pool entries.
+    if (Constant.isMachineConstantPoolEntry())
+      llvm_unreachable("Can't print target specific constant pool entries yet");
 
     yaml::MachineConstantPoolValue YamlConstant;
+    std::string Str;
+    raw_string_ostream StrOS(Str);
+    Constant.Val.ConstVal->printAsOperand(StrOS);
     YamlConstant.ID = ID++;
     YamlConstant.Value = StrOS.str();
     YamlConstant.Alignment = Constant.getAlignment();
-    YamlConstant.IsTargetSpecific = Constant.isMachineConstantPoolEntry();
-
     MF.Constants.push_back(YamlConstant);
   }
 }
@@ -741,12 +731,11 @@ void MIPrinter::print(const MachineInstr &MI) {
 
   if (!MI.memoperands_empty()) {
     OS << " :: ";
-    const LLVMContext &Context = MF->getFunction()->getContext();
     bool NeedComma = false;
     for (const auto *Op : MI.memoperands()) {
       if (NeedComma)
         OS << ", ";
-      print(Context, *TII, *Op);
+      print(*Op);
       NeedComma = true;
     }
   }
@@ -1042,20 +1031,9 @@ void MIPrinter::print(const MachineOperand &Op, const TargetRegisterInfo *TRI,
   }
 }
 
-static const char *getTargetMMOFlagName(const TargetInstrInfo &TII,
-                                        unsigned TMMOFlag) {
-  auto Flags = TII.getSerializableMachineMemOperandTargetFlags();
-  for (const auto &I : Flags) {
-    if (I.first == TMMOFlag) {
-      return I.second;
-    }
-  }
-  return nullptr;
-}
-
-void MIPrinter::print(const LLVMContext &Context, const TargetInstrInfo &TII,
-                      const MachineMemOperand &Op) {
+void MIPrinter::print(const MachineMemOperand &Op) {
   OS << '(';
+  // TODO: Print operand's target specific flags.
   if (Op.isVolatile())
     OS << "volatile ";
   if (Op.isNonTemporal())
@@ -1064,15 +1042,6 @@ void MIPrinter::print(const LLVMContext &Context, const TargetInstrInfo &TII,
     OS << "dereferenceable ";
   if (Op.isInvariant())
     OS << "invariant ";
-  if (Op.getFlags() & MachineMemOperand::MOTargetFlag1)
-    OS << '"' << getTargetMMOFlagName(TII, MachineMemOperand::MOTargetFlag1)
-       << "\" ";
-  if (Op.getFlags() & MachineMemOperand::MOTargetFlag2)
-    OS << '"' << getTargetMMOFlagName(TII, MachineMemOperand::MOTargetFlag2)
-       << "\" ";
-  if (Op.getFlags() & MachineMemOperand::MOTargetFlag3)
-    OS << '"' << getTargetMMOFlagName(TII, MachineMemOperand::MOTargetFlag3)
-       << "\" ";
   if (Op.isLoad())
     OS << "load ";
   else {
@@ -1080,7 +1049,8 @@ void MIPrinter::print(const LLVMContext &Context, const TargetInstrInfo &TII,
     OS << "store ";
   }
 
-  printSyncScope(Context, Op.getSyncScopeID());
+  if (Op.getSynchScope() == SynchronizationScope::SingleThread)
+    OS << "singlethread ";
 
   if (Op.getOrdering() != AtomicOrdering::NotAtomic)
     OS << toIRString(Op.getOrdering()) << ' ';
@@ -1147,23 +1117,6 @@ void MIPrinter::print(const LLVMContext &Context, const TargetInstrInfo &TII,
     Op.getRanges()->printAsOperand(OS, MST);
   }
   OS << ')';
-}
-
-void MIPrinter::printSyncScope(const LLVMContext &Context, SyncScope::ID SSID) {
-  switch (SSID) {
-  case SyncScope::System: {
-    break;
-  }
-  default: {
-    if (SSNs.empty())
-      Context.getSyncScopeNames(SSNs);
-
-    OS << "syncscope(\"";
-    PrintEscapedString(SSNs[SSID], OS);
-    OS << "\") ";
-    break;
-  }
-  }
 }
 
 static void printCFIRegister(unsigned DwarfReg, raw_ostream &OS,

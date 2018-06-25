@@ -52,8 +52,7 @@ public:
                     Type *Ty);
 
   TTI::PopcntSupportKind getPopcntSupport(unsigned TyWidth);
-  void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
-                               TTI::UnrollingPreferences &UP);
+  void getUnrollingPreferences(Loop *L, TTI::UnrollingPreferences &UP);
 
   /// @}
 

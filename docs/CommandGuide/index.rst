@@ -51,5 +51,4 @@ Developer Tools
    tblgen
    lit
    llvm-build
-   llvm-pdbutil
    llvm-readobj

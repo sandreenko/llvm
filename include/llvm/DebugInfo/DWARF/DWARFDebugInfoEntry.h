@@ -12,7 +12,6 @@
 
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
-#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include <cstdint>
 
 namespace llvm {
@@ -41,7 +40,8 @@ public:
 
   /// High performance extraction should use this call.
   bool extractFast(const DWARFUnit &U, uint32_t *OffsetPtr,
-                   const DWARFDataExtractor &DebugInfoData, uint32_t UEndOffset,
+                   const DataExtractor &DebugInfoData,
+                   uint32_t UEndOffset,
                    uint32_t Depth);
 
   uint32_t getOffset() const { return Offset; }

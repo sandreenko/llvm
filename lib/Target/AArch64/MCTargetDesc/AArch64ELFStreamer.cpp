@@ -14,7 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "AArch64TargetStreamer.h"
-#include "AArch64WinCOFFStreamer.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
@@ -31,7 +30,6 @@
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbolELF.h"
-#include "llvm/MC/MCWinCOFFStreamer.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/raw_ostream.h"
@@ -212,8 +210,6 @@ createAArch64ObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
   const Triple &TT = STI.getTargetTriple();
   if (TT.isOSBinFormatELF())
     return new AArch64TargetELFStreamer(S);
-  if (TT.isOSBinFormatCOFF())
-    return new AArch64TargetWinCOFFStreamer(S);
   return nullptr;
 }
 

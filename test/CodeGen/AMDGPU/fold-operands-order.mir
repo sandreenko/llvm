@@ -1,4 +1,10 @@
 # RUN: llc -mtriple=amdgcn--amdhsa -mcpu=hawaii -verify-machineinstrs -run-pass si-fold-operands -o - %s | FileCheck -check-prefix=GCN %s
+
+--- |
+  define amdgpu_kernel void @mov_in_use_list_2x() {
+    unreachable
+  }
+
 ...
 ---
 

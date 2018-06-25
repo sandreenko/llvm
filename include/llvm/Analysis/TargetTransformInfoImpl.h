@@ -120,10 +120,6 @@ public:
     return SI.getNumCases();
   }
 
-  int getExtCost(const Instruction *I, const Value *Src) {
-    return TTI::TCC_Basic;
-  }
-
   unsigned getCallCost(FunctionType *FTy, int NumArgs) {
     assert(FTy && "FunctionType must be provided to this routine.");
 
@@ -221,8 +217,7 @@ public:
     return true;
   }
 
-  void getUnrollingPreferences(Loop *, ScalarEvolution &,
-                               TTI::UnrollingPreferences &) {}
+  void getUnrollingPreferences(Loop *, TTI::UnrollingPreferences &) {}
 
   bool isLegalAddImmediate(int64_t Imm) { return false; }
 
@@ -230,7 +225,7 @@ public:
 
   bool isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV, int64_t BaseOffset,
                              bool HasBaseReg, int64_t Scale,
-                             unsigned AddrSpace, Instruction *I = nullptr) {
+                             unsigned AddrSpace) {
     // Guess that only reg and reg+reg addressing is allowed. This heuristic is
     // taken from the implementation of LSR.
     return !BaseGV && BaseOffset == 0 && (Scale == 0 || Scale == 1);
@@ -262,7 +257,7 @@ public:
     return -1;
   }
 
-  bool LSRWithInstrQueries() { return false; }
+  bool isFoldableMemAccessOffset(Instruction *I, int64_t Offset) { return true; }
 
   bool isTruncateFree(Type *Ty1, Type *Ty2) { return false; }
 
@@ -339,29 +334,6 @@ public:
   }
 
   unsigned getCacheLineSize() { return 0; }
-
-  llvm::Optional<unsigned> getCacheSize(TargetTransformInfo::CacheLevel Level) {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
-
-  llvm::Optional<unsigned> getCacheAssociativity(
-    TargetTransformInfo::CacheLevel Level) {
-    switch (Level) {
-    case TargetTransformInfo::CacheLevel::L1D:
-      LLVM_FALLTHROUGH;
-    case TargetTransformInfo::CacheLevel::L2D:
-      return llvm::Optional<unsigned>();
-    }
-
-    llvm_unreachable("Unknown TargetTransformInfo::CacheLevel");
-  }
 
   unsigned getPrefetchDistance() { return 0; }
 
@@ -446,10 +418,10 @@ public:
 
   unsigned getAddressComputationCost(Type *Tp, ScalarEvolution *,
                                      const SCEV *) {
-    return 0;
+    return 0; 
   }
 
-  unsigned getArithmeticReductionCost(unsigned, Type *, bool) { return 1; }
+  unsigned getReductionCost(unsigned, Type *, bool) { return 1; }
 
   unsigned getCostOfKeepingLiveOverCall(ArrayRef<Type *> Tys) { return 0; }
 
@@ -469,20 +441,6 @@ public:
   Value *getOrCreateResultFromMemIntrinsic(IntrinsicInst *Inst,
                                            Type *ExpectedType) {
     return nullptr;
-  }
-
-  Type *getMemcpyLoopLoweringType(LLVMContext &Context, Value *Length,
-                                  unsigned SrcAlign, unsigned DestAlign) const {
-    return Type::getInt8Ty(Context);
-  }
-
-  void getMemcpyLoopResidualLoweringType(SmallVectorImpl<Type *> &OpsOut,
-                                         LLVMContext &Context,
-                                         unsigned RemainingBytes,
-                                         unsigned SrcAlign,
-                                         unsigned DestAlign) const {
-    for (unsigned i = 0; i != RemainingBytes; ++i)
-      OpsOut.push_back(Type::getInt8Ty(Context));
   }
 
   bool areInlineCompatible(const Function *Caller,
@@ -610,7 +568,7 @@ protected:
     APInt StrideVal = Step->getAPInt();
     if (StrideVal.getBitWidth() > 64)
       return false;
-    // FIXME: Need to take absolute value for negative stride case.
+    // FIXME: need to take absolute value for negtive stride case  
     return StrideVal.getSExtValue() < MergeDistance;
   }
 };
@@ -726,14 +684,14 @@ public:
     return static_cast<T *>(this)->getIntrinsicCost(IID, RetTy, ParamTys);
   }
 
-  unsigned getUserCost(const User *U, ArrayRef<const Value *> Operands) {
+  unsigned getUserCost(const User *U) {
     if (isa<PHINode>(U))
       return TTI::TCC_Free; // Model all PHI nodes as free.
 
     if (const GEPOperator *GEP = dyn_cast<GEPOperator>(U)) {
-      return static_cast<T *>(this)->getGEPCost(GEP->getSourceElementType(),
-                                                GEP->getPointerOperand(),
-                                                Operands.drop_front());
+      SmallVector<Value *, 4> Indices(GEP->idx_begin(), GEP->idx_end());
+      return static_cast<T *>(this)->getGEPCost(
+          GEP->getSourceElementType(), GEP->getPointerOperand(), Indices);
     }
 
     if (auto CS = ImmutableCallSite(U)) {
@@ -755,8 +713,6 @@ public:
       // nop on most sane targets.
       if (isa<CmpInst>(CI->getOperand(0)))
         return TTI::TCC_Free;
-      if (isa<SExtInst>(CI) || isa<ZExtInst>(CI) || isa<FPExtInst>(CI))
-        return static_cast<T *>(this)->getExtCost(CI, Operands.back());
     }
 
     return static_cast<T *>(this)->getOperationCost(

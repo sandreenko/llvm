@@ -1,4 +1,4 @@
-; RUN: opt -basicaa -aa-eval -disable-output < %s > /dev/null 2>&1
+; RUN: opt -basicaa -aa-eval -disable-output < %s >& /dev/null
 
 ; BasicAA shouldn't infinitely recurse on the use-def cycles in
 ; unreachable code.

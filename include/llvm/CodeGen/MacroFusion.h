@@ -1,4 +1,4 @@
-//===- MacroFusion.h - Macro Fusion -----------------------------*- C++ -*-===//
+//===- MacroFusion.h - Macro Fusion ------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,26 +12,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_MACROFUSION_H
-#define LLVM_CODEGEN_MACROFUSION_H
-
 #include <functional>
-#include <memory>
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 
 namespace llvm {
-
-class MachineInstr;
-class ScheduleDAGMutation;
-class TargetInstrInfo;
-class TargetSubtargetInfo;
 
 /// \brief Check if the instr pair, FirstMI and SecondMI, should be fused
 /// together. Given SecondMI, when FirstMI is unspecified, then check if
 /// SecondMI may be part of a fused pair at all.
-using ShouldSchedulePredTy = std::function<bool(const TargetInstrInfo &TII,
-                                                const TargetSubtargetInfo &TSI,
-                                                const MachineInstr *FirstMI,
-                                                const MachineInstr &SecondMI)>;
+typedef std::function<bool(const TargetInstrInfo &TII,
+                           const TargetSubtargetInfo &TSI,
+                           const MachineInstr *FirstMI,
+                           const MachineInstr &SecondMI)>  ShouldSchedulePredTy;
 
 /// \brief Create a DAG scheduling mutation to pair instructions back to back
 /// for instructions that benefit according to the target-specific
@@ -46,5 +39,3 @@ std::unique_ptr<ScheduleDAGMutation>
 createBranchMacroFusionDAGMutation(ShouldSchedulePredTy shouldScheduleAdjacent);
 
 } // end namespace llvm
-
-#endif // LLVM_CODEGEN_MACROFUSION_H

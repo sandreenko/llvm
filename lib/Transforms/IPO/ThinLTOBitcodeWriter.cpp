@@ -141,9 +141,7 @@ void simplifyExternals(Module &M) {
       continue;
     }
 
-    if (!F.isDeclaration() || F.getFunctionType() == EmptyFT ||
-        // Changing the type of an intrinsic may invalidate the IR.
-        F.getName().startswith("llvm."))
+    if (!F.isDeclaration() || F.getFunctionType() == EmptyFT)
       continue;
 
     Function *NewF =
@@ -273,8 +271,7 @@ void splitAndWriteThinLTOBitcode(
           if (!ArgT || ArgT->getBitWidth() > 64)
             return;
         }
-        if (!F->isDeclaration() &&
-            computeFunctionBodyMemoryAccess(*F, AARGetter(*F)) == MAK_ReadNone)
+        if (computeFunctionBodyMemoryAccess(*F, AARGetter(*F)) == MAK_ReadNone)
           EligibleVirtualFns.insert(F);
       });
     }
@@ -374,21 +371,20 @@ void splitAndWriteThinLTOBitcode(
                 /*GenerateHash=*/true, &ModHash);
   W.writeModule(MergedM.get(), /*ShouldPreserveUseListOrder=*/false,
                 &MergedMIndex);
-  W.writeSymtab();
   W.writeStrtab();
   OS << Buffer;
 
-  // If a minimized bitcode module was requested for the thin link, only
-  // the information that is needed by thin link will be written in the
-  // given OS (the merged module will be written as usual).
+  // If a minimized bitcode module was requested for the thin link,
+  // strip the debug info (the merged module was already stripped above)
+  // and write it to the given OS.
   if (ThinLinkOS) {
     Buffer.clear();
     BitcodeWriter W2(Buffer);
     StripDebugInfo(M);
-    W2.writeThinLinkBitcode(&M, Index, ModHash);
+    W2.writeModule(&M, /*ShouldPreserveUseListOrder=*/false, &Index,
+                   /*GenerateHash=*/false, &ModHash);
     W2.writeModule(MergedM.get(), /*ShouldPreserveUseListOrder=*/false,
                    &MergedMIndex);
-    W2.writeSymtab();
     W2.writeStrtab();
     *ThinLinkOS << Buffer;
   }
@@ -421,11 +417,14 @@ void writeThinLTOBitcode(raw_ostream &OS, raw_ostream *ThinLinkOS,
   ModuleHash ModHash = {{0}};
   WriteBitcodeToFile(&M, OS, /*ShouldPreserveUseListOrder=*/false, Index,
                      /*GenerateHash=*/true, &ModHash);
-  // If a minimized bitcode module was requested for the thin link, only
-  // the information that is needed by thin link will be written in the
-  // given OS.
-  if (ThinLinkOS && Index)
-    WriteThinLinkBitcodeToFile(&M, *ThinLinkOS, *Index, ModHash);
+  // If a minimized bitcode module was requested for the thin link,
+  // strip the debug info and write it to the given OS.
+  if (ThinLinkOS) {
+    StripDebugInfo(M);
+    WriteBitcodeToFile(&M, *ThinLinkOS, /*ShouldPreserveUseListOrder=*/false,
+                       Index,
+                       /*GenerateHash=*/false, &ModHash);
+  }
 }
 
 class WriteThinLTOBitcode : public ModulePass {

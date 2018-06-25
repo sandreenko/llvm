@@ -1,4 +1,4 @@
-//===- DebugChecksumsSubsection.cpp ---------------------------------------===//
+//===- DebugChecksumsSubsection.cpp ----------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,17 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/DebugChecksumsSubsection.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
+
+#include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
 #include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/MathExtras.h"
-#include <cassert>
-#include <cstdint>
-#include <cstring>
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -32,7 +25,7 @@ struct FileChecksumEntryHeader {
                               // Checksum bytes follow.
 };
 
-Error VarStreamArrayExtractor<FileChecksumEntry>::
+Error llvm::VarStreamArrayExtractor<FileChecksumEntry>::
 operator()(BinaryStreamRef Stream, uint32_t &Len, FileChecksumEntry &Item) {
   BinaryStreamReader Reader(Stream);
 
@@ -55,7 +48,6 @@ Error DebugChecksumsSubsectionRef::initialize(BinaryStreamReader Reader) {
 
   return Error::success();
 }
-
 Error DebugChecksumsSubsectionRef::initialize(BinaryStreamRef Section) {
   BinaryStreamReader Reader(Section);
   return initialize(Reader);

@@ -317,13 +317,7 @@ uint64_t MCJIT::getSymbolAddress(const std::string &Name,
     raw_string_ostream MangledNameStream(MangledName);
     Mangler::getNameWithPrefix(MangledNameStream, Name, getDataLayout());
   }
-  if (auto Sym = findSymbol(MangledName, CheckFunctionsOnly)) {
-    if (auto AddrOrErr = Sym.getAddress())
-      return *AddrOrErr;
-    else
-      report_fatal_error(AddrOrErr.takeError());
-  } else
-    report_fatal_error(Sym.takeError());
+  return findSymbol(MangledName, CheckFunctionsOnly).getAddress();
 }
 
 JITSymbol MCJIT::findSymbol(const std::string &Name,
@@ -605,12 +599,11 @@ GenericValue MCJIT::runFunction(Function *F, ArrayRef<GenericValue> ArgValues) {
 
 void *MCJIT::getPointerToNamedFunction(StringRef Name, bool AbortOnFailure) {
   if (!isSymbolSearchingDisabled()) {
-    if (auto Sym = Resolver.findSymbol(Name)) {
-      if (auto AddrOrErr = Sym.getAddress())
-        return reinterpret_cast<void*>(
-                 static_cast<uintptr_t>(*AddrOrErr));
-    } else if (auto Err = Sym.takeError())
-      report_fatal_error(std::move(Err));
+    void *ptr =
+      reinterpret_cast<void*>(
+        static_cast<uintptr_t>(Resolver.findSymbol(Name).getAddress()));
+    if (ptr)
+      return ptr;
   }
 
   /// If a LazyFunctionCreator is installed, use it to get/create the function.

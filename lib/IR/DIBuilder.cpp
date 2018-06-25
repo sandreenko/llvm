@@ -148,13 +148,10 @@ DICompileUnit *DIBuilder::createCompileUnit(
 
 static DIImportedEntity *
 createImportedModule(LLVMContext &C, dwarf::Tag Tag, DIScope *Context,
-                     Metadata *NS, DIFile *File, unsigned Line, StringRef Name,
+                     Metadata *NS, unsigned Line, StringRef Name,
                      SmallVectorImpl<TrackingMDNodeRef> &AllImportedModules) {
-  if (Line)
-    assert(File && "Source location has line number but no file");
   unsigned EntitiesCount = C.pImpl->DIImportedEntitys.size();
-  auto *M =
-      DIImportedEntity::get(C, Tag, Context, DINodeRef(NS), File, Line, Name);
+  auto *M = DIImportedEntity::get(C, Tag, Context, DINodeRef(NS), Line, Name);
   if (EntitiesCount < C.pImpl->DIImportedEntitys.size())
     // A new Imported Entity was just added to the context.
     // Add it to the Imported Modules list.
@@ -163,38 +160,33 @@ createImportedModule(LLVMContext &C, dwarf::Tag Tag, DIScope *Context,
 }
 
 DIImportedEntity *DIBuilder::createImportedModule(DIScope *Context,
-                                                  DINamespace *NS, DIFile *File,
+                                                  DINamespace *NS,
                                                   unsigned Line) {
   return ::createImportedModule(VMContext, dwarf::DW_TAG_imported_module,
-                                Context, NS, File, Line, StringRef(),
-                                AllImportedModules);
+                                Context, NS, Line, StringRef(), AllImportedModules);
 }
 
 DIImportedEntity *DIBuilder::createImportedModule(DIScope *Context,
                                                   DIImportedEntity *NS,
-                                                  DIFile *File, unsigned Line) {
+                                                  unsigned Line) {
   return ::createImportedModule(VMContext, dwarf::DW_TAG_imported_module,
-                                Context, NS, File, Line, StringRef(),
-                                AllImportedModules);
+                                Context, NS, Line, StringRef(), AllImportedModules);
 }
 
 DIImportedEntity *DIBuilder::createImportedModule(DIScope *Context, DIModule *M,
-                                                  DIFile *File, unsigned Line) {
+                                                  unsigned Line) {
   return ::createImportedModule(VMContext, dwarf::DW_TAG_imported_module,
-                                Context, M, File, Line, StringRef(),
-                                AllImportedModules);
+                                Context, M, Line, StringRef(), AllImportedModules);
 }
 
 DIImportedEntity *DIBuilder::createImportedDeclaration(DIScope *Context,
                                                        DINode *Decl,
-                                                       DIFile *File,
                                                        unsigned Line,
                                                        StringRef Name) {
   // Make sure to use the unique identifier based metadata reference for
   // types that have one.
   return ::createImportedModule(VMContext, dwarf::DW_TAG_imported_declaration,
-                                Context, Decl, File, Line, Name,
-                                AllImportedModules);
+                                Context, Decl, Line, Name, AllImportedModules);
 }
 
 DIFile *DIBuilder::createFile(StringRef Filename, StringRef Directory,
@@ -595,8 +587,6 @@ DIGlobalVariableExpression *DIBuilder::createGlobalVariableExpression(
       VMContext, cast_or_null<DIScope>(Context), Name, LinkageName, F,
       LineNumber, Ty, isLocalToUnit, true, cast_or_null<DIDerivedType>(Decl),
       AlignInBits);
-  if (!Expr)
-    Expr = createExpression();
   auto *N = DIGlobalVariableExpression::get(VMContext, GV, Expr);
   AllGVs.push_back(N);
   return N;
@@ -668,6 +658,12 @@ DIExpression *DIBuilder::createExpression(ArrayRef<int64_t> Signed) {
   // TODO: Remove the callers of this signed version and delete.
   SmallVector<uint64_t, 8> Addr(Signed.begin(), Signed.end());
   return createExpression(Addr);
+}
+
+DIExpression *DIBuilder::createFragmentExpression(unsigned OffsetInBytes,
+                                                  unsigned SizeInBytes) {
+  uint64_t Addr[] = {dwarf::DW_OP_LLVM_fragment, OffsetInBytes, SizeInBytes};
+  return DIExpression::get(VMContext, Addr);
 }
 
 template <class... Ts>
@@ -819,7 +815,7 @@ Instruction *DIBuilder::insertDeclare(Value *Storage, DILocalVariable *VarInfo,
   return withDebugLoc(CallInst::Create(DeclareFn, Args, "", InsertAtEnd), DL);
 }
 
-Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V,
+Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V, uint64_t Offset,
                                                 DILocalVariable *VarInfo,
                                                 DIExpression *Expr,
                                                 const DILocation *DL,
@@ -836,12 +832,13 @@ Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V,
   trackIfUnresolved(VarInfo);
   trackIfUnresolved(Expr);
   Value *Args[] = {getDbgIntrinsicValueImpl(VMContext, V),
+                   ConstantInt::get(Type::getInt64Ty(VMContext), Offset),
                    MetadataAsValue::get(VMContext, VarInfo),
                    MetadataAsValue::get(VMContext, Expr)};
   return withDebugLoc(CallInst::Create(ValueFn, Args, "", InsertBefore), DL);
 }
 
-Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V,
+Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V, uint64_t Offset,
                                                 DILocalVariable *VarInfo,
                                                 DIExpression *Expr,
                                                 const DILocation *DL,
@@ -858,6 +855,7 @@ Instruction *DIBuilder::insertDbgValueIntrinsic(Value *V,
   trackIfUnresolved(VarInfo);
   trackIfUnresolved(Expr);
   Value *Args[] = {getDbgIntrinsicValueImpl(VMContext, V),
+                   ConstantInt::get(Type::getInt64Ty(VMContext), Offset),
                    MetadataAsValue::get(VMContext, VarInfo),
                    MetadataAsValue::get(VMContext, Expr)};
 

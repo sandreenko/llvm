@@ -35,6 +35,9 @@ entry:
 ; CHECK: cmp
 ; CHECK: it eq
 ; CHECK: cmpeq
+; CHECK: itt eq
+; CHECK: moveq
+; CHECK: popeq
 	br label %tailrecurse
 
 tailrecurse:		; preds = %bb, %entry

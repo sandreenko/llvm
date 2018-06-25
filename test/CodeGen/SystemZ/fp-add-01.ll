@@ -1,8 +1,6 @@
 ; Test 32-bit floating-point addition.
 ;
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 \
-; RUN:   | FileCheck -check-prefix=CHECK -check-prefix=CHECK-SCALAR %s
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z14 | FileCheck %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 declare float @foo()
 
@@ -78,7 +76,7 @@ define float @f6(float %f1, float *%base, i64 %index) {
 define float @f7(float *%ptr0) {
 ; CHECK-LABEL: f7:
 ; CHECK: brasl %r14, foo@PLT
-; CHECK-SCALAR: aeb %f0, 16{{[04]}}(%r15)
+; CHECK: aeb %f0, 16{{[04]}}(%r15)
 ; CHECK: br %r14
   %ptr1 = getelementptr float, float *%ptr0, i64 2
   %ptr2 = getelementptr float, float *%ptr0, i64 4

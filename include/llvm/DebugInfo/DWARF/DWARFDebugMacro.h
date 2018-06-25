@@ -40,7 +40,7 @@ class DWARFDebugMacro {
     };
   };
 
-  using MacroList = SmallVector<Entry, 4>;
+  typedef SmallVector<Entry, 4> MacroList;
 
   /// A list of all the macro entries in the debug_macinfo section.
   MacroList Macros;

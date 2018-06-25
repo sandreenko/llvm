@@ -7,17 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_CODEVIEW_STRINGSANDCHECKSUMS_H
-#define LLVM_DEBUGINFO_CODEVIEW_STRINGSANDCHECKSUMS_H
+#ifndef LLVM_DEBUGINFO_CODEVIEW_STRINGS_AND_CHECKSUMS_H
+#define LLVM_DEBUGINFO_CODEVIEW_STRINGS_AND_CHECKSUMS_H
 
 #include "llvm/DebugInfo/CodeView/CodeView.h"
-#include "llvm/DebugInfo/CodeView/DebugChecksumsSubsection.h"
-#include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsectionRecord.h"
+
 #include <memory>
 
 namespace llvm {
 namespace codeview {
+
+class DebugSubsectionRecord;
+class DebugChecksumsSubsectionRef;
+class DebugStringTableSubsectionRef;
+class DebugChecksumsSubsection;
+class DebugStringTableSubsection;
 
 class StringsAndChecksumsRef {
 public:
@@ -78,9 +83,8 @@ class StringsAndChecksums {
 public:
   using StringsPtr = std::shared_ptr<DebugStringTableSubsection>;
   using ChecksumsPtr = std::shared_ptr<DebugChecksumsSubsection>;
-
   // If no subsections are known about initially, we find as much as we can.
-  StringsAndChecksums() = default;
+  StringsAndChecksums() {}
 
   void setStrings(const StringsPtr &SP) { Strings = SP; }
   void setChecksums(const ChecksumsPtr &CP) { Checksums = CP; }
@@ -96,7 +100,7 @@ private:
   ChecksumsPtr Checksums;
 };
 
-} // end namespace codeview
-} // end namespace llvm
+} // namespace codeview
+} // namespace llvm
 
-#endif // LLVM_DEBUGINFO_CODEVIEW_STRINGSANDCHECKSUMS_H
+#endif

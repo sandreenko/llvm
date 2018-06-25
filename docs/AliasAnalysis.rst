@@ -132,8 +132,7 @@ The ``MayAlias`` response is used whenever the two pointers might refer to the
 same object.
 
 The ``PartialAlias`` response is used when the two memory objects are known to
-be overlapping in some way, regardless whether they start at the same address
-or not.
+be overlapping in some way, but do not start at the same address.
 
 The ``MustAlias`` response may only be returned if the two memory objects are
 guaranteed to always start at exactly the same location. A ``MustAlias``

@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/DWARF/DWARFDebugFrame.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Optional.h"
@@ -70,7 +71,7 @@ protected:
 
   /// An entry may contain CFI instructions. An instruction consists of an
   /// opcode and an optional sequence of operands.
-  using Operands = std::vector<uint64_t>;
+  typedef std::vector<uint64_t> Operands;
   struct Instruction {
     Instruction(uint8_t Opcode)
       : Opcode(Opcode)

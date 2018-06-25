@@ -2304,7 +2304,7 @@ InferAllTypes(const StringMap<SmallVector<TreePatternNode*,1> > *InNamedTypes) {
   bool MadeChange = true;
   while (MadeChange) {
     MadeChange = false;
-    for (TreePatternNode *&Tree : Trees) {
+    for (TreePatternNode *Tree : Trees) {
       MadeChange |= Tree->ApplyTypeConstraints(*this, false);
       MadeChange |= SimplifyTree(Tree);
     }
@@ -3220,7 +3220,7 @@ static void FindNames(const TreePatternNode *P,
 }
 
 void CodeGenDAGPatterns::AddPatternToMatch(TreePattern *Pattern,
-                                           PatternToMatch &&PTM) {
+                                           const PatternToMatch &PTM) {
   // Do some sanity checking on the pattern we're about to match.
   std::string Reason;
   if (!PTM.getSrcPattern()->canPatternMatch(Reason, *this)) {
@@ -3259,7 +3259,7 @@ void CodeGenDAGPatterns::AddPatternToMatch(TreePattern *Pattern,
         SrcNames[Entry.first].second == 1)
       Pattern->error("Pattern has dead named input: $" + Entry.first);
 
-  PatternsToMatch.push_back(std::move(PTM));
+  PatternsToMatch.push_back(PTM);
 }
 
 
@@ -3551,12 +3551,14 @@ void CodeGenDAGPatterns::ParsePatterns() {
     TreePattern Temp(Result.getRecord(), DstPattern, false, *this);
     Temp.InferAllTypes();
 
-    AddPatternToMatch(
-        Pattern,
-        PatternToMatch(
-            CurPattern, CurPattern->getValueAsListInit("Predicates"),
-            Pattern->getTree(0), Temp.getOnlyTree(), std::move(InstImpResults),
-            CurPattern->getValueAsInt("AddedComplexity"), CurPattern->getID()));
+
+    AddPatternToMatch(Pattern,
+                    PatternToMatch(CurPattern,
+                                   CurPattern->getValueAsListInit("Predicates"),
+                                   Pattern->getTree(0),
+                                   Temp.getOnlyTree(), InstImpResults,
+                                   CurPattern->getValueAsInt("AddedComplexity"),
+                                   CurPattern->getID()));
   }
 }
 
@@ -3837,11 +3839,11 @@ void CodeGenDAGPatterns::GenerateVariants() {
       if (AlreadyExists) continue;
 
       // Otherwise, add it to the list of patterns we have.
-      PatternsToMatch.push_back(PatternToMatch(
+      PatternsToMatch.emplace_back(
           PatternsToMatch[i].getSrcRecord(), PatternsToMatch[i].getPredicates(),
           Variant, PatternsToMatch[i].getDstPattern(),
           PatternsToMatch[i].getDstRegs(),
-          PatternsToMatch[i].getAddedComplexity(), Record::getNewUID()));
+          PatternsToMatch[i].getAddedComplexity(), Record::getNewUID());
     }
 
     DEBUG(errs() << "\n");

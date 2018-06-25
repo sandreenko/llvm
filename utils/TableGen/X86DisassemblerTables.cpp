@@ -10,7 +10,7 @@
 // This file is part of the X86 Disassembler Emitter.
 // It contains the implementation of the disassembler tables.
 // Documentation for the disassembler emitter in general can be found in
-//  X86DisassemblerEmitter.h.
+//  X86DisasemblerEmitter.h.
 //
 //===----------------------------------------------------------------------===//
 

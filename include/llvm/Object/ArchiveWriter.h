@@ -37,7 +37,7 @@ struct NewArchiveMember {
                                             bool Deterministic);
 };
 
-std::error_code
+std::pair<StringRef, std::error_code>
 writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
              bool WriteSymtab, object::Archive::Kind Kind, bool Deterministic,
              bool Thin, std::unique_ptr<MemoryBuffer> OldArchiveBuf = nullptr);

@@ -25,9 +25,7 @@ public:
   CVSymbolVisitor(SymbolVisitorCallbacks &Callbacks);
 
   Error visitSymbolRecord(CVSymbol &Record);
-  Error visitSymbolRecord(CVSymbol &Record, uint32_t Offset);
   Error visitSymbolStream(const CVSymbolArray &Symbols);
-  Error visitSymbolStream(const CVSymbolArray &Symbols, uint32_t InitialOffset);
 
 private:
   SymbolVisitorCallbacks &Callbacks;

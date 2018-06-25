@@ -12,23 +12,19 @@
 ///
 //===----------------------------------------------------------------------===//
 
+// TODO: Implement atomic instructions.
+
+//===----------------------------------------------------------------------===//
+// Atomic fences
+//===----------------------------------------------------------------------===//
+
+// TODO: add atomic fences here...
+
 //===----------------------------------------------------------------------===//
 // Atomic loads
 //===----------------------------------------------------------------------===//
 
-let Defs = [ARGUMENTS] in {
-// TODO: add the rest of the atomic loads
-// TODO: factor out 0xfe atomic prefix?
-def ATOMIC_LOAD_I32 : ATOMIC_I<(outs I32:$dst),
-                        (ins P2Align:$p2align, offset32_op:$off, I32:$addr),
-                        [], "i32.atomic.load\t$dst, ${off}(${addr})${p2align}",
-                        0xfe10>;
-} // Defs = [ARGUMENTS]
-
-// Select loads with no constant offset.
-let Predicates = [HasAtomics] in {
-def : Pat<(i32 (atomic_load I32:$addr)), (ATOMIC_LOAD_I32 0, 0, $addr)>;
-}
+// TODO: add atomic loads here...
 
 //===----------------------------------------------------------------------===//
 // Atomic stores
@@ -49,4 +45,3 @@ def : Pat<(i32 (atomic_load I32:$addr)), (ATOMIC_LOAD_I32 0, 0, $addr)>;
 // Store-release-exclusives.
 
 // And clear exclusive.
-

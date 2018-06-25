@@ -35,8 +35,7 @@ define void @convert_v3i32_to_v3i8(<3 x i8>* %dst.addr, <3 x i32>* %src.addr) no
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movdqa (%ecx), %xmm0
-; X86-NEXT:    pcmpeqd %xmm1, %xmm1
-; X86-NEXT:    psubd %xmm1, %xmm0
+; X86-NEXT:    paddd {{\.LCPI.*}}, %xmm0
 ; X86-NEXT:    pextrb $8, %xmm0, 2(%eax)
 ; X86-NEXT:    pshufb {{.*#+}} xmm0 = xmm0[0,4,8,12,u,u,u,u,u,u,u,u,u,u,u,u]
 ; X86-NEXT:    pextrw $0, %xmm0, (%eax)
@@ -46,8 +45,7 @@ define void @convert_v3i32_to_v3i8(<3 x i8>* %dst.addr, <3 x i32>* %src.addr) no
 ; X64-LABEL: convert_v3i32_to_v3i8:
 ; X64:       # BB#0: # %entry
 ; X64-NEXT:    movdqa (%rsi), %xmm0
-; X64-NEXT:    pcmpeqd %xmm1, %xmm1
-; X64-NEXT:    psubd %xmm1, %xmm0
+; X64-NEXT:    paddd {{.*}}(%rip), %xmm0
 ; X64-NEXT:    pextrb $8, %xmm0, 2(%rdi)
 ; X64-NEXT:    pshufb {{.*#+}} xmm0 = xmm0[0,4,8,12,u,u,u,u,u,u,u,u,u,u,u,u]
 ; X64-NEXT:    pextrw $0, %xmm0, (%rdi)
@@ -72,8 +70,7 @@ define void @convert_v5i16_to_v5i8(<5 x i8>* %dst.addr, <5 x i16>* %src.addr) no
 ; X86-NEXT:    movl 8(%ebp), %eax
 ; X86-NEXT:    movl 12(%ebp), %ecx
 ; X86-NEXT:    movdqa (%ecx), %xmm0
-; X86-NEXT:    pcmpeqd %xmm1, %xmm1
-; X86-NEXT:    psubw %xmm1, %xmm0
+; X86-NEXT:    paddw {{\.LCPI.*}}, %xmm0
 ; X86-NEXT:    pextrb $8, %xmm0, 4(%eax)
 ; X86-NEXT:    pshufb {{.*#+}} xmm0 = xmm0[0,2,4,6,8,10,12,14,u,u,u,u,u,u,u,u]
 ; X86-NEXT:    movd %xmm0, (%eax)
@@ -84,8 +81,7 @@ define void @convert_v5i16_to_v5i8(<5 x i8>* %dst.addr, <5 x i16>* %src.addr) no
 ; X64-LABEL: convert_v5i16_to_v5i8:
 ; X64:       # BB#0: # %entry
 ; X64-NEXT:    movdqa (%rsi), %xmm0
-; X64-NEXT:    pcmpeqd %xmm1, %xmm1
-; X64-NEXT:    psubw %xmm1, %xmm0
+; X64-NEXT:    paddw {{.*}}(%rip), %xmm0
 ; X64-NEXT:    pextrb $8, %xmm0, 4(%rdi)
 ; X64-NEXT:    pshufb {{.*#+}} xmm0 = xmm0[0,2,4,6,8,10,12,14,u,u,u,u,u,u,u,u]
 ; X64-NEXT:    movd %xmm0, (%rdi)

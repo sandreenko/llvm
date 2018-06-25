@@ -8,6 +8,5 @@ define i32 @f(i64 %z, i32 %a, double %b) {
   ret i32 %tmp
 }
 
-; CHECK-LABEL: f:
 ; CHECK-NOT: r3
 

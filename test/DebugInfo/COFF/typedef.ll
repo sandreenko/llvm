@@ -2,7 +2,7 @@
 
 ; CHECK: CodeViewDebugInfo [
 ; CHECK:   Subsection [
-; CHECK:     LocalSym {
+; CHECK:     Local {
 ; CHECK:       Type: wchar_t (0x71)
 ; CHECK:       Flags [ (0x0)
 ; CHECK:       ]
@@ -10,7 +10,7 @@
 ; CHECK:     }
 ; CHECK:   Subsection [
 ; CHECK:     SubSectionType: Symbols (0xF1)
-; CHECK:     UDTSym {
+; CHECK:     UDT {
 ; CHECK:       Type: wchar_t (0x71)
 ; CHECK:       UDTName: XYZ
 ; CHECK:     }

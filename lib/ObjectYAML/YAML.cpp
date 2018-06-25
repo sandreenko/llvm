@@ -16,12 +16,11 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cctype>
-#include <cstdint>
 
 using namespace llvm;
 
 void yaml::ScalarTraits<yaml::BinaryRef>::output(
-    const yaml::BinaryRef &Val, void *, raw_ostream &Out) {
+    const yaml::BinaryRef &Val, void *, llvm::raw_ostream &Out) {
   Val.writeAsHex(Out);
 }
 
@@ -35,7 +34,7 @@ StringRef yaml::ScalarTraits<yaml::BinaryRef>::input(StringRef Scalar, void *,
     if (!isxdigit(Scalar[I]))
       return "BinaryRef hex string must contain only hex digits.";
   Val = yaml::BinaryRef(Scalar);
-  return {};
+  return StringRef();
 }
 
 void yaml::BinaryRef::writeAsBinary(raw_ostream &OS) const {

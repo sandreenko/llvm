@@ -1,4 +1,4 @@
-//===- HashTable.cpp - PDB Hash Table -------------------------------------===//
+//===- HashTable.cpp - PDB Hash Table ---------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,16 +8,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/PDB/Native/HashTable.h"
+
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SparseBitVector.h"
 #include "llvm/DebugInfo/PDB/Native/RawError.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/MathExtras.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <utility>
+
+#include <assert.h>
 
 using namespace llvm;
 using namespace llvm::pdb;
@@ -110,11 +106,9 @@ void HashTable::clear() {
 }
 
 uint32_t HashTable::capacity() const { return Buckets.size(); }
-
 uint32_t HashTable::size() const { return Present.count(); }
 
 HashTableIterator HashTable::begin() const { return HashTableIterator(*this); }
-
 HashTableIterator HashTable::end() const {
   return HashTableIterator(*this, 0, true);
 }

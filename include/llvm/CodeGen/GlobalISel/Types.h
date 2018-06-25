@@ -1,4 +1,4 @@
-//===- llvm/CodeGen/GlobalISel/Types.h - Types used by GISel ----*- C++ -*-===//
+//===-- llvm/CodeGen/GlobalISel/Types.h - Types used by GISel ----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -16,10 +16,9 @@
 #define LLVM_CODEGEN_GLOBALISEL_TYPES_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/IR/Value.h"
 
 namespace llvm {
-
-class Value;
 
 /// Map a value to a virtual register.
 /// For now, we chose to map aggregate types to on single virtual
@@ -27,8 +26,7 @@ class Value;
 /// PR26161 tracks that.
 /// Note: We need to expose this type to the target hooks for thing like
 /// ABI lowering that would be used during IRTranslation.
-using ValueToVReg = DenseMap<const Value *, unsigned>;
+typedef DenseMap<const Value *, unsigned> ValueToVReg;
 
-} // end namespace llvm
-
-#endif // LLVM_CODEGEN_GLOBALISEL_TYPES_H
+} // End namespace llvm.
+#endif

@@ -317,8 +317,7 @@ class InstrItineraryData;
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
     bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM,
-                               Type *Ty, unsigned AS,
-                               Instruction *I = nullptr) const override;
+                               Type *Ty, unsigned AS) const override;
 
     /// getScalingFactorCost - Return the cost of the scaling used in
     /// addressing mode represented by AM.
@@ -328,10 +327,6 @@ class InstrItineraryData;
                              unsigned AS) const override;
 
     bool isLegalT2ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
-
-    /// \brief Returns true if the addresing mode representing by AM is legal
-    /// for the Thumb1 target, for a load/store of the specified type.
-    bool isLegalT1ScaledAddressingMode(const AddrMode &AM, EVT VT) const;
 
     /// isLegalICmpImmediate - Return true if the specified immediate is legal
     /// icmp immediate, that is the target has icmp instructions which can
@@ -444,7 +439,7 @@ class InstrItineraryData;
     Sched::Preference getSchedulingPreference(SDNode *N) const override;
 
     bool
-    isShuffleMaskLegal(ArrayRef<int> M, EVT VT) const override;
+    isShuffleMaskLegal(const SmallVectorImpl<int> &M, EVT VT) const override;
     bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
     /// isFPImmLegal - Returns true if the target can instruction select the
@@ -463,8 +458,7 @@ class InstrItineraryData;
 
     /// Return true if EXTRACT_SUBVECTOR is cheap for this result type
     /// with this index.
-    bool isExtractSubvectorCheap(EVT ResVT, EVT SrcVT,
-                                 unsigned Index) const override;
+    bool isExtractSubvectorCheap(EVT ResVT, unsigned Index) const override;
 
     /// \brief Returns true if an argument of type Ty needs to be passed in a
     /// contiguous block of registers in calling convention CallConv.
@@ -516,8 +510,7 @@ class InstrItineraryData;
     bool canCombineStoreAndExtract(Type *VectorTy, Value *Idx,
                                    unsigned &Cost) const override;
 
-    bool canMergeStoresTo(unsigned AddressSpace, EVT MemVT,
-                          const SelectionDAG &DAG) const override {
+    bool canMergeStoresTo(unsigned AddressSpace, EVT MemVT) const override {
       // Do not merge to larger than i32.
       return (MemVT.getSizeInBits() <= 32);
     }

@@ -120,7 +120,9 @@ public:
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addRequired<OptimizationRemarkEmitterWrapperPass>();
     AU.addRequired<ScalarEvolutionWrapperPass>();
-    AU.addPreserved<ScalarEvolutionWrapperPass>();
+    // FIXME: For some reason, preserving SE here breaks LSR (even if
+    // this pass changes nothing).
+    // AU.addPreserved<ScalarEvolutionWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
   }
 

@@ -249,7 +249,7 @@ public:
   /// when other randomness consuming passes are added or removed. In
   /// addition, the random stream will be reproducible across LLVM
   /// versions when the pass does not change.
-  std::unique_ptr<RandomNumberGenerator> createRNG(const Pass* P) const;
+  RandomNumberGenerator *createRNG(const Pass* P) const;
 
 /// @}
 /// @name Module Level Mutators

@@ -203,8 +203,6 @@ namespace {
   char RAFast::ID = 0;
 }
 
-INITIALIZE_PASS(RAFast, "regallocfast", "Fast Register Allocator", false, false)
-
 /// getStackSpaceFor - This allocates space for the specified virtual register
 /// to be held on the stack.
 int RAFast::getStackSpaceFor(unsigned VirtReg, const TargetRegisterClass *RC) {
@@ -246,15 +244,8 @@ void RAFast::addKillFlag(const LiveReg &LR) {
   if (MO.isUse() && !LR.LastUse->isRegTiedToDefOperand(LR.LastOpNum)) {
     if (MO.getReg() == LR.PhysReg)
       MO.setIsKill();
-    // else, don't do anything we are problably redefining a
-    // subreg of this register and given we don't track which
-    // lanes are actually dead, we cannot insert a kill flag here.
-    // Otherwise we may end up in a situation like this:
-    // ... = (MO) physreg:sub1, physreg <implicit-use, kill>
-    // ... <== Here we would allow later pass to reuse physreg:sub1
-    //         which is potentially wrong.
-    // LR:sub0 = ...
-    // ... = LR.sub1 <== This is going to use physreg:sub1
+    else
+      LR.LastUse->addRegisterKilled(LR.PhysReg, TRI, true);
   }
 }
 
@@ -879,9 +870,7 @@ void RAFast::AllocateBasicBlock() {
             else {
               // Modify DBG_VALUE now that the value is in a spill slot.
               bool IsIndirect = MI->isIndirectDebugValue();
-              if (IsIndirect)
-                assert(MI->getOperand(1).getImm() == 0 &&
-                       "DBG_VALUE with nonzero offset");
+              uint64_t Offset = IsIndirect ? MI->getOperand(1).getImm() : 0;
               const MDNode *Var = MI->getDebugVariable();
               const MDNode *Expr = MI->getDebugExpression();
               DebugLoc DL = MI->getDebugLoc();
@@ -892,7 +881,7 @@ void RAFast::AllocateBasicBlock() {
               MachineInstr *NewDV = BuildMI(*MBB, MBB->erase(MI), DL,
                                             TII->get(TargetOpcode::DBG_VALUE))
                                         .addFrameIndex(SS)
-                                        .addImm(0U)
+                                        .addImm(Offset)
                                         .addMetadata(Var)
                                         .addMetadata(Expr);
               DEBUG(dbgs() << "Modifying debug info due to spill:"

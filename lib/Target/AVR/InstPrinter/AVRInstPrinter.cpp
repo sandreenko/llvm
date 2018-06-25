@@ -106,7 +106,7 @@ void AVRInstPrinter::printOperand(const MCInst *MI, unsigned OpNo,
   if (Op.isReg()) {
     bool isPtrReg = (MOI.RegClass == AVR::PTRREGSRegClassID) ||
                     (MOI.RegClass == AVR::PTRDISPREGSRegClassID) ||
-                    (MOI.RegClass == AVR::ZREGRegClassID);
+                    (MOI.RegClass == AVR::ZREGSRegClassID);
 
     if (isPtrReg) {
       O << getRegisterName(Op.getReg(), AVR::ptr);

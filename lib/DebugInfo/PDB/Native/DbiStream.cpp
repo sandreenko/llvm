@@ -99,27 +99,29 @@ Error DbiStream::reload() {
     return make_error<RawError>(raw_error_code::corrupt_file,
                                 "DBI type server substream not aligned.");
 
-  if (auto EC = Reader.readSubstream(ModiSubstream, Header->ModiSubstreamSize))
+  BinaryStreamRef ModInfoSubstream;
+  BinaryStreamRef FileInfoSubstream;
+  if (auto EC =
+          Reader.readStreamRef(ModInfoSubstream, Header->ModiSubstreamSize))
     return EC;
 
-  if (auto EC = Reader.readSubstream(SecContrSubstream,
+  if (auto EC = Reader.readStreamRef(SecContrSubstream,
                                      Header->SecContrSubstreamSize))
     return EC;
-  if (auto EC = Reader.readSubstream(SecMapSubstream, Header->SectionMapSize))
+  if (auto EC = Reader.readStreamRef(SecMapSubstream, Header->SectionMapSize))
     return EC;
-  if (auto EC = Reader.readSubstream(FileInfoSubstream, Header->FileInfoSize))
+  if (auto EC = Reader.readStreamRef(FileInfoSubstream, Header->FileInfoSize))
     return EC;
   if (auto EC =
-          Reader.readSubstream(TypeServerMapSubstream, Header->TypeServerSize))
+          Reader.readStreamRef(TypeServerMapSubstream, Header->TypeServerSize))
     return EC;
-  if (auto EC = Reader.readSubstream(ECSubstream, Header->ECSubstreamSize))
+  if (auto EC = Reader.readStreamRef(ECSubstream, Header->ECSubstreamSize))
     return EC;
   if (auto EC = Reader.readArray(
           DbgStreams, Header->OptionalDbgHdrSize / sizeof(ulittle16_t)))
     return EC;
 
-  if (auto EC = Modules.initialize(ModiSubstream.StreamData,
-                                   FileInfoSubstream.StreamData))
+  if (auto EC = Modules.initialize(ModInfoSubstream, FileInfoSubstream))
     return EC;
 
   if (auto EC = initializeSectionContributionData())
@@ -135,8 +137,8 @@ Error DbiStream::reload() {
     return make_error<RawError>(raw_error_code::corrupt_file,
                                 "Found unexpected bytes in DBI Stream.");
 
-  if (!ECSubstream.empty()) {
-    BinaryStreamReader ECReader(ECSubstream.StreamData);
+  if (ECSubstream.getLength() > 0) {
+    BinaryStreamReader ECReader(ECSubstream);
     if (auto EC = ECNames.reload(ECReader))
       return EC;
   }
@@ -225,15 +227,11 @@ void DbiStream::visitSectionContributions(
   }
 }
 
-Expected<StringRef> DbiStream::getECName(uint32_t NI) const {
-  return ECNames.getStringForID(NI);
-}
-
 Error DbiStream::initializeSectionContributionData() {
-  if (SecContrSubstream.empty())
+  if (SecContrSubstream.getLength() == 0)
     return Error::success();
 
-  BinaryStreamReader SCReader(SecContrSubstream.StreamData);
+  BinaryStreamReader SCReader(SecContrSubstream);
   if (auto EC = SCReader.readEnum(SectionContribVersion))
     return EC;
 
@@ -252,9 +250,6 @@ Error DbiStream::initializeSectionHeadersData() {
     return Error::success();
 
   uint32_t StreamNum = getDebugStreamIndex(DbgHeaderType::SectionHdr);
-  if (StreamNum == kInvalidStreamIndex)
-    return Error::success();
-
   if (StreamNum >= Pdb.getNumStreams())
     return make_error<RawError>(raw_error_code::no_stream);
 
@@ -307,33 +302,11 @@ Error DbiStream::initializeFpoRecords() {
   return Error::success();
 }
 
-BinarySubstreamRef DbiStream::getSectionContributionData() const {
-  return SecContrSubstream;
-}
-
-BinarySubstreamRef DbiStream::getSecMapSubstreamData() const {
-  return SecMapSubstream;
-}
-
-BinarySubstreamRef DbiStream::getModiSubstreamData() const {
-  return ModiSubstream;
-}
-
-BinarySubstreamRef DbiStream::getFileInfoSubstreamData() const {
-  return FileInfoSubstream;
-}
-
-BinarySubstreamRef DbiStream::getTypeServerMapSubstreamData() const {
-  return TypeServerMapSubstream;
-}
-
-BinarySubstreamRef DbiStream::getECSubstreamData() const { return ECSubstream; }
-
 Error DbiStream::initializeSectionMapData() {
-  if (SecMapSubstream.empty())
+  if (SecMapSubstream.getLength() == 0)
     return Error::success();
 
-  BinaryStreamReader SMReader(SecMapSubstream.StreamData);
+  BinaryStreamReader SMReader(SecMapSubstream);
   const SecMapHeader *Header;
   if (auto EC = SMReader.readObject(Header))
     return EC;

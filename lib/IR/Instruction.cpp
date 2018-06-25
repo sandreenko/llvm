@@ -89,10 +89,6 @@ void Instruction::moveBefore(Instruction *MovePos) {
   moveBefore(*MovePos->getParent(), MovePos->getIterator());
 }
 
-void Instruction::moveAfter(Instruction *MovePos) {
-  moveBefore(*MovePos->getParent(), ++MovePos->getIterator());
-}
-
 void Instruction::moveBefore(BasicBlock &BB,
                              SymbolTableList<Instruction>::iterator I) {
   assert(I == BB.end() || I->getParent() == &BB);
@@ -366,13 +362,13 @@ static bool haveSameSpecialState(const Instruction *I1, const Instruction *I2,
            (LI->getAlignment() == cast<LoadInst>(I2)->getAlignment() ||
             IgnoreAlignment) &&
            LI->getOrdering() == cast<LoadInst>(I2)->getOrdering() &&
-           LI->getSyncScopeID() == cast<LoadInst>(I2)->getSyncScopeID();
+           LI->getSynchScope() == cast<LoadInst>(I2)->getSynchScope();
   if (const StoreInst *SI = dyn_cast<StoreInst>(I1))
     return SI->isVolatile() == cast<StoreInst>(I2)->isVolatile() &&
            (SI->getAlignment() == cast<StoreInst>(I2)->getAlignment() ||
             IgnoreAlignment) &&
            SI->getOrdering() == cast<StoreInst>(I2)->getOrdering() &&
-           SI->getSyncScopeID() == cast<StoreInst>(I2)->getSyncScopeID();
+           SI->getSynchScope() == cast<StoreInst>(I2)->getSynchScope();
   if (const CmpInst *CI = dyn_cast<CmpInst>(I1))
     return CI->getPredicate() == cast<CmpInst>(I2)->getPredicate();
   if (const CallInst *CI = dyn_cast<CallInst>(I1))
@@ -390,7 +386,7 @@ static bool haveSameSpecialState(const Instruction *I1, const Instruction *I2,
     return EVI->getIndices() == cast<ExtractValueInst>(I2)->getIndices();
   if (const FenceInst *FI = dyn_cast<FenceInst>(I1))
     return FI->getOrdering() == cast<FenceInst>(I2)->getOrdering() &&
-           FI->getSyncScopeID() == cast<FenceInst>(I2)->getSyncScopeID();
+           FI->getSynchScope() == cast<FenceInst>(I2)->getSynchScope();
   if (const AtomicCmpXchgInst *CXI = dyn_cast<AtomicCmpXchgInst>(I1))
     return CXI->isVolatile() == cast<AtomicCmpXchgInst>(I2)->isVolatile() &&
            CXI->isWeak() == cast<AtomicCmpXchgInst>(I2)->isWeak() &&
@@ -398,13 +394,12 @@ static bool haveSameSpecialState(const Instruction *I1, const Instruction *I2,
                cast<AtomicCmpXchgInst>(I2)->getSuccessOrdering() &&
            CXI->getFailureOrdering() ==
                cast<AtomicCmpXchgInst>(I2)->getFailureOrdering() &&
-           CXI->getSyncScopeID() ==
-               cast<AtomicCmpXchgInst>(I2)->getSyncScopeID();
+           CXI->getSynchScope() == cast<AtomicCmpXchgInst>(I2)->getSynchScope();
   if (const AtomicRMWInst *RMWI = dyn_cast<AtomicRMWInst>(I1))
     return RMWI->getOperation() == cast<AtomicRMWInst>(I2)->getOperation() &&
            RMWI->isVolatile() == cast<AtomicRMWInst>(I2)->isVolatile() &&
            RMWI->getOrdering() == cast<AtomicRMWInst>(I2)->getOrdering() &&
-           RMWI->getSyncScopeID() == cast<AtomicRMWInst>(I2)->getSyncScopeID();
+           RMWI->getSynchScope() == cast<AtomicRMWInst>(I2)->getSynchScope();
 
   return true;
 }

@@ -1,4 +1,4 @@
-//===- EnumTables.h - Enum to string conversion tables ----------*- C++ -*-===//
+//===- EnumTables.h Enum to string conversion tables ------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -14,11 +14,11 @@
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/Support/ScopedPrinter.h"
-#include <cstdint>
+
+#include <stdint.h>
 
 namespace llvm {
 namespace codeview {
-
 ArrayRef<EnumEntry<SymbolKind>> getSymbolTypeNames();
 ArrayRef<EnumEntry<TypeLeafKind>> getTypeLeafNames();
 ArrayRef<EnumEntry<uint16_t>> getRegisterNames();
@@ -38,8 +38,7 @@ ArrayRef<EnumEntry<uint8_t>> getThunkOrdinalNames();
 ArrayRef<EnumEntry<uint16_t>> getTrampolineNames();
 ArrayRef<EnumEntry<COFF::SectionCharacteristics>>
 getImageSectionCharacteristicNames();
-
-} // end namespace codeview
-} // end namespace llvm
+} // namespace codeview
+} // namespace llvm
 
 #endif // LLVM_DEBUGINFO_CODEVIEW_ENUMTABLES_H

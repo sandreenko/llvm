@@ -263,7 +263,6 @@ namespace ISD {
     /// They are used to limit optimizations while the DAG is being
     /// optimized.
     STRICT_FADD, STRICT_FSUB, STRICT_FMUL, STRICT_FDIV, STRICT_FREM,
-    STRICT_FMA,
 
     /// Constrained versions of libm-equivalent floating point intrinsics.
     /// These will be lowered to the equivalent non-constrained pseudo-op

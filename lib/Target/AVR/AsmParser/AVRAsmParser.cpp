@@ -466,7 +466,6 @@ bool AVRAsmParser::parseOperand(OperandVector &Operands) {
     if (!tryParseRegisterOperand(Operands)) {
       return false;
     }
-    LLVM_FALLTHROUGH;
   case AsmToken::LParen:
   case AsmToken::Integer:
   case AsmToken::Dot:

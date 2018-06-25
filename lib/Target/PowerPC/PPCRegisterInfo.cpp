@@ -754,31 +754,19 @@ bool PPCRegisterInfo::hasReservedSpillSlot(const MachineFunction &MF,
   return false;
 }
 
-// If the offset must be a multiple of some value, return what that value is.
-static unsigned offsetMinAlign(const MachineInstr &MI) {
+// Figure out if the offset in the instruction must be a multiple of 4.
+// This is true for instructions like "STD".
+static bool usesIXAddr(const MachineInstr &MI) {
   unsigned OpC = MI.getOpcode();
 
   switch (OpC) {
   default:
-    return 1;
+    return false;
   case PPC::LWA:
   case PPC::LWA_32:
   case PPC::LD:
-  case PPC::LDU:
   case PPC::STD:
-  case PPC::STDU:
-  case PPC::DFLOADf32:
-  case PPC::DFLOADf64:
-  case PPC::DFSTOREf32:
-  case PPC::DFSTOREf64:
-  case PPC::LXSD:
-  case PPC::LXSSP:
-  case PPC::STXSD:
-  case PPC::STXSSP:
-    return 4;
-  case PPC::LXV:
-  case PPC::STXV:
-    return 16;
+    return true;
   }
 }
 
@@ -864,6 +852,9 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MI.getOperand(FIOperandNum).ChangeToRegister(
     FrameIndex < 0 ? getBaseRegister(MF) : getFrameRegister(MF), false);
 
+  // Figure out if the offset in the instruction is shifted right two bits.
+  bool isIXAddr = usesIXAddr(MI);
+
   // If the instruction is not present in ImmToIdxMap, then it has no immediate
   // form (and must be r+r).
   bool noImmForm = !MI.isInlineAsm() && OpC != TargetOpcode::STACKMAP &&
@@ -892,8 +883,7 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // happen in invalid code.
   assert(OpC != PPC::DBG_VALUE &&
          "This should be handled in a target-independent way");
-  if (!noImmForm && ((isInt<16>(Offset) &&
-                      ((Offset % offsetMinAlign(MI)) == 0)) ||
+  if (!noImmForm && ((isInt<16>(Offset) && (!isIXAddr || (Offset & 3) == 0)) ||
                      OpC == TargetOpcode::STACKMAP ||
                      OpC == TargetOpcode::PATCHPOINT)) {
     MI.getOperand(OffsetOperandNo).ChangeToImmediate(Offset);
@@ -1086,5 +1076,5 @@ bool PPCRegisterInfo::isFrameOffsetLegal(const MachineInstr *MI,
   return MI->getOpcode() == PPC::DBG_VALUE || // DBG_VALUE is always Reg+Imm
          MI->getOpcode() == TargetOpcode::STACKMAP ||
          MI->getOpcode() == TargetOpcode::PATCHPOINT ||
-         (isInt<16>(Offset) && (Offset % offsetMinAlign(*MI)) == 0);
+         (isInt<16>(Offset) && (!usesIXAddr(*MI) || (Offset & 3) == 0));
 }

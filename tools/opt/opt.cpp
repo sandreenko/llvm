@@ -242,11 +242,6 @@ static cl::opt<bool> PassRemarksWithHotness(
     cl::desc("With PGO, include profile count in optimization remarks"),
     cl::Hidden);
 
-static cl::opt<unsigned> PassRemarksHotnessThreshold(
-    "pass-remarks-hotness-threshold",
-    cl::desc("Minimum profile count required for an optimization remark to be output"),
-    cl::Hidden);
-
 static cl::opt<std::string>
     RemarksFilename("pass-remarks-output",
                     cl::desc("YAML output filename for pass remarks"),
@@ -349,7 +344,7 @@ static TargetMachine* GetTargetMachine(Triple TheTriple, StringRef CPUStr,
 
   return TheTarget->createTargetMachine(TheTriple.getTriple(), CPUStr,
                                         FeaturesStr, Options, getRelocModel(),
-                                        getCodeModel(), GetCodeGenOptLevel());
+                                        CMModel, GetCodeGenOptLevel());
 }
 
 #ifdef LINK_POLLY_INTO_TOOLS
@@ -425,22 +420,19 @@ int main(int argc, char **argv) {
     Context.enableDebugTypeODRUniquing();
 
   if (PassRemarksWithHotness)
-    Context.setDiagnosticsHotnessRequested(true);
+    Context.setDiagnosticHotnessRequested(true);
 
-  if (PassRemarksHotnessThreshold)
-    Context.setDiagnosticsHotnessThreshold(PassRemarksHotnessThreshold);
-
-  std::unique_ptr<tool_output_file> OptRemarkFile;
+  std::unique_ptr<tool_output_file> YamlFile;
   if (RemarksFilename != "") {
     std::error_code EC;
-    OptRemarkFile = llvm::make_unique<tool_output_file>(RemarksFilename, EC,
-                                                        sys::fs::F_None);
+    YamlFile = llvm::make_unique<tool_output_file>(RemarksFilename, EC,
+                                                   sys::fs::F_None);
     if (EC) {
       errs() << EC.message() << '\n';
       return 1;
     }
     Context.setDiagnosticsOutputFile(
-        llvm::make_unique<yaml::Output>(OptRemarkFile->os()));
+        llvm::make_unique<yaml::Output>(YamlFile->os()));
   }
 
   // Load the input module...
@@ -540,8 +532,7 @@ int main(int argc, char **argv) {
     // string. Hand off the rest of the functionality to the new code for that
     // layer.
     return runPassPipeline(argv[0], *M, TM.get(), Out.get(), ThinLinkOut.get(),
-                           OptRemarkFile.get(), PassPipeline, OK, VK,
-                           PreserveAssemblyUseListOrder,
+                           PassPipeline, OK, VK, PreserveAssemblyUseListOrder,
                            PreserveBitcodeUseListOrder, EmitSummaryIndex,
                            EmitModuleHash)
                ? 0
@@ -768,8 +759,8 @@ int main(int argc, char **argv) {
                 "the compile-twice option\n";
       Out->os() << BOS->str();
       Out->keep();
-      if (OptRemarkFile)
-        OptRemarkFile->keep();
+      if (YamlFile)
+        YamlFile->keep();
       return 1;
     }
     Out->os() << BOS->str();
@@ -779,8 +770,8 @@ int main(int argc, char **argv) {
   if (!NoOutput || PrintBreakpoints)
     Out->keep();
 
-  if (OptRemarkFile)
-    OptRemarkFile->keep();
+  if (YamlFile)
+    YamlFile->keep();
 
   if (ThinLinkOut)
     ThinLinkOut->keep();

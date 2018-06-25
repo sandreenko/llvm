@@ -724,34 +724,6 @@ DIExpression *DIExpression::prepend(const DIExpression *Expr, bool Deref,
   return DIExpression::get(Expr->getContext(), Ops);
 }
 
-DIExpression *DIExpression::createFragmentExpression(const DIExpression *Expr,
-                                                     unsigned OffsetInBits,
-                                                     unsigned SizeInBits) {
-  SmallVector<uint64_t, 8> Ops;
-  // Copy over the expression, but leave off any trailing DW_OP_LLVM_fragment.
-  if (Expr) {
-    for (auto Op : Expr->expr_ops()) {
-      if (Op.getOp() == dwarf::DW_OP_LLVM_fragment) {
-        // Make the new offset point into the existing fragment.
-        uint64_t FragmentOffsetInBits = Op.getArg(0);
-        // Op.getArg(0) is FragmentOffsetInBits.
-        // Op.getArg(1) is FragmentSizeInBits.
-        assert((OffsetInBits + SizeInBits <= Op.getArg(0) + Op.getArg(1)) &&
-               "new fragment outside of original fragment");
-        OffsetInBits += FragmentOffsetInBits;
-        break;
-      }
-      Ops.push_back(Op.getOp());
-      for (unsigned I = 0; I < Op.getNumArgs(); ++I)
-        Ops.push_back(Op.getArg(I));
-    }
-  }
-  Ops.push_back(dwarf::DW_OP_LLVM_fragment);
-  Ops.push_back(OffsetInBits);
-  Ops.push_back(SizeInBits);
-  return DIExpression::get(Expr->getContext(), Ops);
-}
-
 bool DIExpression::isConstant() const {
   // Recognize DW_OP_constu C DW_OP_stack_value (DW_OP_LLVM_fragment Len Ofs)?.
   if (getNumElements() != 3 && getNumElements() != 6)
@@ -788,13 +760,12 @@ DIObjCProperty *DIObjCProperty::getImpl(
 
 DIImportedEntity *DIImportedEntity::getImpl(LLVMContext &Context, unsigned Tag,
                                             Metadata *Scope, Metadata *Entity,
-                                            Metadata *File, unsigned Line,
-                                            MDString *Name, StorageType Storage,
+                                            unsigned Line, MDString *Name,
+                                            StorageType Storage,
                                             bool ShouldCreate) {
   assert(isCanonical(Name) && "Expected canonical MDString");
-  DEFINE_GETIMPL_LOOKUP(DIImportedEntity,
-                        (Tag, Scope, Entity, File, Line, Name));
-  Metadata *Ops[] = {Scope, Entity, Name, File};
+  DEFINE_GETIMPL_LOOKUP(DIImportedEntity, (Tag, Scope, Entity, Line, Name));
+  Metadata *Ops[] = {Scope, Entity, Name};
   DEFINE_GETIMPL_STORE(DIImportedEntity, (Tag, Line), Ops);
 }
 

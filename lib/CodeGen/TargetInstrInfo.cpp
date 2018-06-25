@@ -388,11 +388,10 @@ bool TargetInstrInfo::produceSameValue(const MachineInstr &MI0,
   return MI0.isIdenticalTo(MI1, MachineInstr::IgnoreVRegDefs);
 }
 
-MachineInstr &TargetInstrInfo::duplicate(MachineBasicBlock &MBB,
-    MachineBasicBlock::iterator InsertBefore, const MachineInstr &Orig) const {
+MachineInstr *TargetInstrInfo::duplicate(MachineInstr &Orig,
+                                         MachineFunction &MF) const {
   assert(!Orig.isNotDuplicable() && "Instruction cannot be duplicated");
-  MachineFunction &MF = *MBB.getParent();
-  return MF.CloneMachineInstrBundle(MBB, InsertBefore, Orig);
+  return MF.CloneMachineInstr(&Orig);
 }
 
 // If the COPY instruction in MI can be folded to a stack operation, return

@@ -1,4 +1,4 @@
-//===- AArch64TargetTransformInfo.h - AArch64 specific TTI ------*- C++ -*-===//
+//===-- AArch64TargetTransformInfo.h - AArch64 specific TTI -----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -18,31 +18,17 @@
 #define LLVM_LIB_TARGET_AARCH64_AARCH64TARGETTRANSFORMINFO_H
 
 #include "AArch64.h"
-#include "AArch64Subtarget.h"
 #include "AArch64TargetMachine.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/BasicTTIImpl.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/Intrinsics.h"
-#include <cstdint>
+#include "llvm/Target/TargetLowering.h"
+#include <algorithm>
 
 namespace llvm {
 
-class APInt;
-class Instruction;
-class IntrinsicInst;
-class Loop;
-class SCEV;
-class ScalarEvolution;
-class Type;
-class Value;
-class VectorType;
-
 class AArch64TTIImpl : public BasicTTIImplBase<AArch64TTIImpl> {
-  using BaseT = BasicTTIImplBase<AArch64TTIImpl>;
-  using TTI = TargetTransformInfo;
-
+  typedef BasicTTIImplBase<AArch64TTIImpl> BaseT;
+  typedef TargetTransformInfo TTI;
   friend BaseT;
 
   const AArch64Subtarget *ST;
@@ -64,9 +50,6 @@ public:
   explicit AArch64TTIImpl(const AArch64TargetMachine *TM, const Function &F)
       : BaseT(TM, F.getParent()->getDataLayout()), ST(TM->getSubtargetImpl(F)),
         TLI(ST->getTargetLowering()) {}
-
-  bool areInlineCompatible(const Function *Caller,
-                           const Function *Callee) const;
 
   /// \name Scalar TTI Implementations
   /// @{
@@ -136,8 +119,7 @@ public:
 
   int getCostOfKeepingLiveOverCall(ArrayRef<Type *> Tys);
 
-  void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
-                               TTI::UnrollingPreferences &UP);
+  void getUnrollingPreferences(Loop *L, TTI::UnrollingPreferences &UP);
 
   Value *getOrCreateResultFromMemIntrinsic(IntrinsicInst *Inst,
                                            Type *ExpectedType);
@@ -171,4 +153,4 @@ public:
 
 } // end namespace llvm
 
-#endif // LLVM_LIB_TARGET_AARCH64_AARCH64TARGETTRANSFORMINFO_H
+#endif

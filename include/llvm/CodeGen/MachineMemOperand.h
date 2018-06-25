@@ -45,29 +45,19 @@ struct MachinePointerInfo {
   /// Offset - This is an offset from the base Value*.
   int64_t Offset;
 
-  uint8_t StackID;
-
-  explicit MachinePointerInfo(const Value *v = nullptr, int64_t offset = 0,
-                              uint8_t ID = 0)
-    : V(v), Offset(offset), StackID(ID) {}
+  explicit MachinePointerInfo(const Value *v = nullptr, int64_t offset = 0)
+    : V(v), Offset(offset) {}
 
   explicit MachinePointerInfo(const PseudoSourceValue *v,
-                              int64_t offset = 0,
-                              uint8_t ID = 0)
-    : V(v), Offset(offset), StackID(ID) {}
+                              int64_t offset = 0)
+    : V(v), Offset(offset) {}
 
   MachinePointerInfo getWithOffset(int64_t O) const {
     if (V.isNull()) return MachinePointerInfo();
     if (V.is<const Value*>())
-      return MachinePointerInfo(V.get<const Value*>(), Offset+O, StackID);
-    return MachinePointerInfo(V.get<const PseudoSourceValue*>(), Offset+O,
-                              StackID);
+      return MachinePointerInfo(V.get<const Value*>(), Offset+O);
+    return MachinePointerInfo(V.get<const PseudoSourceValue*>(), Offset+O);
   }
-
-  /// Return true if memory region [V, V+Offset+Size) is known to be
-  /// dereferenceable.
-  bool isDereferenceable(unsigned Size, LLVMContext &C,
-                         const DataLayout &DL) const;
 
   /// Return the LLVM IR address space number that this pointer points into.
   unsigned getAddrSpace() const;
@@ -87,8 +77,7 @@ struct MachinePointerInfo {
   static MachinePointerInfo getGOT(MachineFunction &MF);
 
   /// Stack pointer relative access.
-  static MachinePointerInfo getStack(MachineFunction &MF, int64_t Offset,
-                                     uint8_t ID = 0);
+  static MachinePointerInfo getStack(MachineFunction &MF, int64_t Offset);
 };
 
 
@@ -120,9 +109,6 @@ public:
     MOInvariant = 1u << 5,
 
     // Reserved for use by target-specific passes.
-    // Targets may override getSerializableMachineMemOperandTargetFlags() to
-    // enable MIR serialization/parsing of these flags.  If more of these flags
-    // are added, the MIR printing/parsing code will need to be updated as well.
     MOTargetFlag1 = 1u << 6,
     MOTargetFlag2 = 1u << 7,
     MOTargetFlag3 = 1u << 8,
@@ -133,8 +119,8 @@ public:
 private:
   /// Atomic information for this memory operation.
   struct MachineAtomicInfo {
-    /// Synchronization scope ID for this memory operation.
-    unsigned SSID : 8;            // SyncScope::ID
+    /// Synchronization scope for this memory operation.
+    unsigned SynchScope : 1;      // enum SynchronizationScope
     /// Atomic ordering requirements for this memory operation. For cmpxchg
     /// atomic operations, atomic ordering requirements when store occurs.
     unsigned Ordering : 4;        // enum AtomicOrdering
@@ -161,7 +147,7 @@ public:
                     unsigned base_alignment,
                     const AAMDNodes &AAInfo = AAMDNodes(),
                     const MDNode *Ranges = nullptr,
-                    SyncScope::ID SSID = SyncScope::System,
+                    SynchronizationScope SynchScope = CrossThread,
                     AtomicOrdering Ordering = AtomicOrdering::NotAtomic,
                     AtomicOrdering FailureOrdering = AtomicOrdering::NotAtomic);
 
@@ -211,9 +197,9 @@ public:
   /// Return the range tag for the memory reference.
   const MDNode *getRanges() const { return Ranges; }
 
-  /// Returns the synchronization scope ID for this memory operation.
-  SyncScope::ID getSyncScopeID() const {
-    return static_cast<SyncScope::ID>(AtomicInfo.SSID);
+  /// Return the synchronization scope for this memory operation.
+  SynchronizationScope getSynchScope() const {
+    return static_cast<SynchronizationScope>(AtomicInfo.SynchScope);
   }
 
   /// Return the atomic ordering requirements for this memory operation. For

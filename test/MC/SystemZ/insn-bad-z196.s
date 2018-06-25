@@ -43,22 +43,6 @@
 	aih	%r0, (1 << 31)
 
 #CHECK: error: invalid operand
-#CHECK: alsih	%r0, (-1 << 31) - 1
-#CHECK: error: invalid operand
-#CHECK: alsih	%r0, (1 << 31)
-
-	alsih	%r0, (-1 << 31) - 1
-	alsih	%r0, (1 << 31)
-
-#CHECK: error: invalid operand
-#CHECK: alsihn	%r0, (-1 << 31) - 1
-#CHECK: error: invalid operand
-#CHECK: alsihn	%r0, (1 << 31)
-
-	alsihn	%r0, (-1 << 31) - 1
-	alsihn	%r0, (1 << 31)
-
-#CHECK: error: invalid operand
 #CHECK: axtra	%f0, %f0, %f0, -1
 #CHECK: error: invalid operand
 #CHECK: axtra	%f0, %f0, %f0, 16
@@ -607,11 +591,6 @@
 
 	clih	%r0, -1
 	clih	%r0, (1 << 32)
-
-#CHECK: error: instruction requires: enhanced-dat-2
-#CHECK: crdte   %r0, %r0, %r0, 0
-
-	crdte   %r0, %r0, %r0, 0
 
 #CHECK: error: invalid operand
 #CHECK: cxfbra	%f0, 0, %r0, -1

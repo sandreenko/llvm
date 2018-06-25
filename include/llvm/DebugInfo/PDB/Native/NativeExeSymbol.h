@@ -18,16 +18,14 @@ namespace pdb {
 
 class NativeExeSymbol : public NativeRawSymbol {
 public:
-  NativeExeSymbol(NativeSession &Session, SymIndexId SymbolId);
-
-  std::unique_ptr<NativeRawSymbol> clone() const override;
+  NativeExeSymbol(NativeSession &Session);
 
   std::unique_ptr<IPDBEnumSymbols>
   findChildren(PDB_SymType Type) const override;
 
   uint32_t getAge() const override;
   std::string getSymbolsFileName() const override;
-  codeview::GUID getGuid() const override;
+  PDB_UniqueId getGuid() const override;
   bool hasCTypes() const override;
   bool hasPrivateSymbols() const override;
 

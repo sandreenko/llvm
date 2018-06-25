@@ -22,11 +22,6 @@ def : ProcessorModel<"generic-rv32", NoSchedModel, []>;
 
 def : ProcessorModel<"generic-rv64", NoSchedModel, [Feature64Bit]>;
 
-def RISCVAsmParser : AsmParser {
-  let ShouldEmitMatchRegisterAltName = 1;
-}
-
 def RISCV : Target {
   let InstructionSet = RISCVInstrInfo;
-  let AssemblyParsers = [RISCVAsmParser];
 }

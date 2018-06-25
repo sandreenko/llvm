@@ -207,7 +207,8 @@ bool operator<(PointerUnion<PT1, PT2> lhs, PointerUnion<PT1, PT2> rhs) {
 // Teach SmallPtrSet that PointerUnion is "basically a pointer", that has
 // # low bits available = min(PT1bits,PT2bits)-1.
 template <typename PT1, typename PT2>
-struct PointerLikeTypeTraits<PointerUnion<PT1, PT2>> {
+class PointerLikeTypeTraits<PointerUnion<PT1, PT2>> {
+public:
   static inline void *getAsVoidPointer(const PointerUnion<PT1, PT2> &P) {
     return P.getOpaqueValue();
   }
@@ -327,7 +328,8 @@ public:
 // Teach SmallPtrSet that PointerUnion3 is "basically a pointer", that has
 // # low bits available = min(PT1bits,PT2bits,PT2bits)-2.
 template <typename PT1, typename PT2, typename PT3>
-struct PointerLikeTypeTraits<PointerUnion3<PT1, PT2, PT3>> {
+class PointerLikeTypeTraits<PointerUnion3<PT1, PT2, PT3>> {
+public:
   static inline void *getAsVoidPointer(const PointerUnion3<PT1, PT2, PT3> &P) {
     return P.getOpaqueValue();
   }
@@ -433,7 +435,8 @@ public:
 // Teach SmallPtrSet that PointerUnion4 is "basically a pointer", that has
 // # low bits available = min(PT1bits,PT2bits,PT2bits)-2.
 template <typename PT1, typename PT2, typename PT3, typename PT4>
-struct PointerLikeTypeTraits<PointerUnion4<PT1, PT2, PT3, PT4>> {
+class PointerLikeTypeTraits<PointerUnion4<PT1, PT2, PT3, PT4>> {
+public:
   static inline void *
   getAsVoidPointer(const PointerUnion4<PT1, PT2, PT3, PT4> &P) {
     return P.getOpaqueValue();

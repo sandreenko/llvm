@@ -177,7 +177,7 @@ public:
    */
   void setMaxCacheSizeRelativeToAvailableSpace(unsigned Percentage) {
     if (Percentage)
-      CacheOptions.Policy.MaxSizePercentageOfAvailableSpace = Percentage;
+      CacheOptions.Policy.PercentageOfAvailableSpace = Percentage;
   }
 
   /**@}*/

@@ -100,7 +100,6 @@ struct MIToken {
     md_alias_scope,
     md_noalias,
     md_range,
-    md_diexpr,
 
     // Identifier tokens
     Identifier,
@@ -128,8 +127,7 @@ struct MIToken {
     NamedIRValue,
     IRValue,
     QuotedIRValue, // `<constant value>`
-    SubRegisterIndex,
-    StringConstant
+    SubRegisterIndex
   };
 
 private:
@@ -170,8 +168,7 @@ public:
 
   bool isMemoryOperandFlag() const {
     return Kind == kw_volatile || Kind == kw_non_temporal ||
-           Kind == kw_dereferenceable || Kind == kw_invariant ||
-           Kind == StringConstant;
+           Kind == kw_dereferenceable || Kind == kw_invariant;
   }
 
   bool is(TokenKind K) const { return Kind == K; }

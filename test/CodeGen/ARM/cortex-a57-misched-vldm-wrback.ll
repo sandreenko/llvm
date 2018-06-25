@@ -13,15 +13,15 @@
 ; CHECK:       rdefs left
 ; CHECK-NEXT:  Latency            : 6
 ; CHECK:       Successors:
-; CHECK:       Data
+; CHECK:       data
 ; CHECK-SAME:  Latency=1
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data
 ; CHECK-SAME:  Latency=1
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data
 ; CHECK-SAME:  Latency=5
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data 
 ; CHECK-SAME:  Latency=5
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data 
 ; CHECK-SAME:  Latency=6
 define i32 @bar(i32* %iptr) minsize optsize {
   %1 = load double, double* @a, align 8

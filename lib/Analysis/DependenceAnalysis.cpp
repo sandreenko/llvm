@@ -3342,8 +3342,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
 
     UsefulGEP = isLoopInvariant(SrcPtrSCEV, LI->getLoopFor(Src->getParent())) &&
                 isLoopInvariant(DstPtrSCEV, LI->getLoopFor(Dst->getParent())) &&
-                (SrcGEP->getNumOperands() == DstGEP->getNumOperands()) &&
-                isKnownPredicate(CmpInst::ICMP_EQ, SrcPtrSCEV, DstPtrSCEV);
+                (SrcGEP->getNumOperands() == DstGEP->getNumOperands());
   }
   unsigned Pairs = UsefulGEP ? SrcGEP->idx_end() - SrcGEP->idx_begin() : 1;
   SmallVector<Subscript, 4> Pair(Pairs);
@@ -3372,7 +3371,7 @@ DependenceInfo::depends(Instruction *Src, Instruction *Dst,
 
   if (Delinearize && CommonLevels > 1) {
     if (tryDelinearize(Src, Dst, Pair)) {
-      DEBUG(dbgs() << "    delinearized GEP\n");
+      DEBUG(dbgs() << "    delinerized GEP\n");
       Pairs = Pair.size();
     }
   }
@@ -3797,7 +3796,7 @@ const SCEV *DependenceInfo::getSplitIteration(const Dependence &Dep,
 
   if (Delinearize && CommonLevels > 1) {
     if (tryDelinearize(Src, Dst, Pair)) {
-      DEBUG(dbgs() << "    delinearized GEP\n");
+      DEBUG(dbgs() << "    delinerized GEP\n");
       Pairs = Pair.size();
     }
   }

@@ -1,4 +1,4 @@
-//===- LazyRandomTypeCollection.cpp ---------------------------------------===//
+//===- LazyRandomTypeCollection.cpp ---------------------------- *- C++--*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,20 +8,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/LazyRandomTypeCollection.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/None.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringRef.h"
+
+#include "llvm/DebugInfo/CodeView/CVTypeVisitor.h"
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
-#include "llvm/DebugInfo/CodeView/RecordName.h"
-#include "llvm/DebugInfo/CodeView/TypeRecord.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <iterator>
+#include "llvm/DebugInfo/CodeView/TypeName.h"
+#include "llvm/DebugInfo/CodeView/TypeServerHandler.h"
+#include "llvm/DebugInfo/CodeView/TypeVisitorCallbacks.h"
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -75,16 +67,8 @@ void LazyRandomTypeCollection::reset(ArrayRef<uint8_t> Data,
   reset(toStringRef(Data), RecordCountHint);
 }
 
-uint32_t LazyRandomTypeCollection::getOffsetOfType(TypeIndex Index) {
-  error(ensureTypeExists(Index));
-  assert(contains(Index));
-
-  return Records[Index.toArrayIndex()].Offset;
-}
-
 CVType LazyRandomTypeCollection::getType(TypeIndex Index) {
-  auto EC = ensureTypeExists(Index);
-  error(std::move(EC));
+  error(ensureTypeExists(Index));
   assert(contains(Index));
 
   return Records[Index.toArrayIndex()].Type;

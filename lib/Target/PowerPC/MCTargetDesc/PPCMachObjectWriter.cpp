@@ -219,11 +219,11 @@ bool PPCMachObjectWriter::recordScatteredRelocation(
     const MCSymbol *SB = &B->getSymbol();
 
     if (!SB->getFragment())
-      report_fatal_error("symbol '" + SB->getName() +
+      report_fatal_error("symbol '" + B->getSymbol().getName() +
                          "' can not be undefined in a subtraction expression");
 
     // FIXME: is Type correct? see include/llvm/BinaryFormat/MachO.h
-    Value2 = Writer->getSymbolAddress(*SB, Layout);
+    Value2 = Writer->getSymbolAddress(B->getSymbol(), Layout);
     FixedValue -= Writer->getSectionAddress(SB->getFragment()->getParent());
   }
   // FIXME: does FixedValue get used??

@@ -9,22 +9,15 @@
 
 #include "llvm/DebugInfo/PDB/Native/NativeCompilandSymbol.h"
 
-#include "llvm/ADT/STLExtras.h"
-
 namespace llvm {
 namespace pdb {
 
 NativeCompilandSymbol::NativeCompilandSymbol(NativeSession &Session,
-                                             SymIndexId SymbolId,
                                              DbiModuleDescriptor MI)
-    : NativeRawSymbol(Session, SymbolId), Module(MI) {}
+    : NativeRawSymbol(Session), Module(MI) {}
 
 PDB_SymType NativeCompilandSymbol::getSymTag() const {
   return PDB_SymType::Compiland;
-}
-
-std::unique_ptr<NativeRawSymbol> NativeCompilandSymbol::clone() const {
-  return llvm::make_unique<NativeCompilandSymbol>(Session, SymbolId, Module);
 }
 
 bool NativeCompilandSymbol::isEditAndContinueEnabled() const {

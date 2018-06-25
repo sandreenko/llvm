@@ -1,4 +1,4 @@
-//===- MipsDelaySlotFiller.cpp - Mips Delay Slot Filler -------------------===//
+//===-- MipsDelaySlotFiller.cpp - Mips Delay Slot Filler ------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -14,8 +14,8 @@
 #include "MCTargetDesc/MipsMCNaCl.h"
 #include "Mips.h"
 #include "MipsInstrInfo.h"
-#include "MipsRegisterInfo.h"
 #include "MipsSubtarget.h"
+#include "MipsTargetMachine.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -42,7 +42,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 #include <algorithm>
 #include <cassert>
 #include <iterator>
@@ -104,9 +103,9 @@ static cl::opt<CompactBranchPolicy> MipsCompactBranchPolicy(
 
 namespace {
 
-  using Iter = MachineBasicBlock::iterator;
-  using ReverseIter = MachineBasicBlock::reverse_iterator;
-  using BB2BrMap = SmallDenseMap<MachineBasicBlock *, MachineInstr *, 2>;
+  typedef MachineBasicBlock::iterator Iter;
+  typedef MachineBasicBlock::reverse_iterator ReverseIter;
+  typedef SmallDenseMap<MachineBasicBlock*, MachineInstr*, 2> BB2BrMap;
 
   class RegDefsUses {
   public:
@@ -187,7 +186,7 @@ namespace {
     MemDefsUses(const DataLayout &DL, const MachineFrameInfo *MFI);
 
   private:
-    using ValueType = PointerUnion<const Value *, const PseudoSourceValue *>;
+    typedef PointerUnion<const Value *, const PseudoSourceValue *> ValueType;
 
     bool hasHazard_(const MachineInstr &MI) override;
 
@@ -212,7 +211,7 @@ namespace {
 
   class Filler : public MachineFunctionPass {
   public:
-    Filler() : MachineFunctionPass(ID) {}
+    Filler() : MachineFunctionPass(ID), TM(nullptr) {}
 
     StringRef getPassName() const override { return "Mips Delay Slot Filler"; }
 
@@ -291,14 +290,14 @@ namespace {
 
     bool terminateSearch(const MachineInstr &Candidate) const;
 
-    const TargetMachine *TM = nullptr;
+    const TargetMachine *TM;
 
     static char ID;
   };
 
-} // end anonymous namespace
+  char Filler::ID = 0;
 
-char Filler::ID = 0;
+} // end anonymous namespace
 
 static bool hasUnoccupiedSlot(const MachineInstr *MI) {
   return MI->hasDelaySlot() && !MI->isBundledWithSucc();
@@ -565,7 +564,7 @@ Iter Filler::replaceWithCompactBranch(MachineBasicBlock &MBB, Iter Branch,
 
 // For given opcode returns opcode of corresponding instruction with short
 // delay slot.
-// For the pseudo TAILCALL*_MM instructions return the short delay slot
+// For the pseudo TAILCALL*_MM instrunctions return the short delay slot
 // form. Unfortunately, TAILCALL<->b16 is denied as b16 has a limited range
 // that is too short to make use of for tail calls.
 static int getEquivalentCallShort(int Opcode) {

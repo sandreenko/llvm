@@ -45,7 +45,7 @@ private:
 
 template <typename DylibLookupFtorT,
           typename ExternalLookupFtorT>
-std::shared_ptr<LambdaResolver<DylibLookupFtorT, ExternalLookupFtorT>>
+std::unique_ptr<LambdaResolver<DylibLookupFtorT, ExternalLookupFtorT>>
 createLambdaResolver(DylibLookupFtorT DylibLookupFtor,
                      ExternalLookupFtorT ExternalLookupFtor) {
   using LR = LambdaResolver<DylibLookupFtorT, ExternalLookupFtorT>;

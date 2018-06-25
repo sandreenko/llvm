@@ -45,9 +45,9 @@ public:
 };
 
 TEST(RTDyldObjectLinkingLayerTest, TestSetProcessAllSections) {
-  class MemoryManagerWrapper : public SectionMemoryManager {
+  class SectionMemoryManagerWrapper : public SectionMemoryManager {
   public:
-    MemoryManagerWrapper(bool &DebugSeen) : DebugSeen(DebugSeen) {}
+    SectionMemoryManagerWrapper(bool &DebugSeen) : DebugSeen(DebugSeen) {}
     uint8_t *allocateDataSection(uintptr_t Size, unsigned Alignment,
                                  unsigned SectionID,
                                  StringRef SectionName,
@@ -63,10 +63,7 @@ TEST(RTDyldObjectLinkingLayerTest, TestSetProcessAllSections) {
     bool &DebugSeen;
   };
 
-  bool DebugSectionSeen = false;
-  auto MM = std::make_shared<MemoryManagerWrapper>(DebugSectionSeen);
-
-  RTDyldObjectLinkingLayer ObjLayer([&MM]() { return MM; });
+  RTDyldObjectLinkingLayer<> ObjLayer;
 
   LLVMContext Context;
   auto M = llvm::make_unique<Module>("", Context);
@@ -88,10 +85,13 @@ TEST(RTDyldObjectLinkingLayerTest, TestSetProcessAllSections) {
   if (!TM)
     return;
 
-  auto Obj =
-    std::make_shared<object::OwningBinary<object::ObjectFile>>(
-      SimpleCompiler(*TM)(*M));
+  auto OwningObj = SimpleCompiler(*TM)(*M);
+  std::vector<object::ObjectFile*> Objs;
+  Objs.push_back(OwningObj.getBinary());
 
+  bool DebugSectionSeen = false;
+  auto SMMW =
+    std::make_shared<SectionMemoryManagerWrapper>(DebugSectionSeen);
   auto Resolver =
     createLambdaResolver(
       [](const std::string &Name) {
@@ -103,21 +103,21 @@ TEST(RTDyldObjectLinkingLayerTest, TestSetProcessAllSections) {
 
   {
     // Test with ProcessAllSections = false (the default).
-    auto H = cantFail(ObjLayer.addObject(Obj, Resolver));
-    cantFail(ObjLayer.emitAndFinalize(H));
+    auto H = ObjLayer.addObjectSet(Objs, SMMW, &*Resolver);
+    ObjLayer.emitAndFinalize(H);
     EXPECT_EQ(DebugSectionSeen, false)
       << "Unexpected debug info section";
-    cantFail(ObjLayer.removeObject(H));
+    ObjLayer.removeObjectSet(H);
   }
 
   {
     // Test with ProcessAllSections = true.
     ObjLayer.setProcessAllSections(true);
-    auto H = cantFail(ObjLayer.addObject(Obj, Resolver));
-    cantFail(ObjLayer.emitAndFinalize(H));
+    auto H = ObjLayer.addObjectSet(Objs, SMMW, &*Resolver);
+    ObjLayer.emitAndFinalize(H);
     EXPECT_EQ(DebugSectionSeen, true)
       << "Expected debug info section not seen";
-    cantFail(ObjLayer.removeObject(H));
+    ObjLayer.removeObjectSet(H);
   }
 }
 
@@ -125,9 +125,7 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoDuplicateFinalization) {
   if (!TM)
     return;
 
-  auto MM = std::make_shared<SectionMemoryManagerWrapper>();
-
-  RTDyldObjectLinkingLayer ObjLayer([&MM]() { return MM; });
+  RTDyldObjectLinkingLayer<> ObjLayer;
   SimpleCompiler Compile(*TM);
 
   // Create a pair of modules that will trigger recursive finalization:
@@ -153,9 +151,9 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoDuplicateFinalization) {
     Builder.CreateRet(FourtyTwo);
   }
 
-  auto Obj1 =
-    std::make_shared<object::OwningBinary<object::ObjectFile>>(
-      Compile(*MB1.getModule()));
+  auto Obj1 = Compile(*MB1.getModule());
+  std::vector<object::ObjectFile*> Obj1Set;
+  Obj1Set.push_back(Obj1.getBinary());
 
   ModuleBuilder MB2(Context, "", "dummy");
   {
@@ -166,9 +164,9 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoDuplicateFinalization) {
     IRBuilder<> Builder(FooEntry);
     Builder.CreateRet(Builder.CreateCall(BarDecl));
   }
-  auto Obj2 =
-    std::make_shared<object::OwningBinary<object::ObjectFile>>(
-      Compile(*MB2.getModule()));
+  auto Obj2 = Compile(*MB2.getModule());
+  std::vector<object::ObjectFile*> Obj2Set;
+  Obj2Set.push_back(Obj2.getBinary());
 
   auto Resolver =
     createLambdaResolver(
@@ -181,14 +179,15 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoDuplicateFinalization) {
         return JITSymbol(nullptr);
       });
 
-  cantFail(ObjLayer.addObject(std::move(Obj1), Resolver));
-  auto H = cantFail(ObjLayer.addObject(std::move(Obj2), Resolver));
-  cantFail(ObjLayer.emitAndFinalize(H));
-  cantFail(ObjLayer.removeObject(H));
-
+  auto SMMW = std::make_shared<SectionMemoryManagerWrapper>();
+  ObjLayer.addObjectSet(std::move(Obj1Set), SMMW, &*Resolver);
+  auto H = ObjLayer.addObjectSet(std::move(Obj2Set), SMMW, &*Resolver);
+  ObjLayer.emitAndFinalize(H);
+  ObjLayer.removeObjectSet(H);
+  
   // Finalization of module 2 should trigger finalization of module 1.
   // Verify that finalize on SMMW is only called once.
-  EXPECT_EQ(MM->FinalizationCount, 1)
+  EXPECT_EQ(SMMW->FinalizationCount, 1)
       << "Extra call to finalize";
 }
 
@@ -196,9 +195,7 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoPrematureAllocation) {
   if (!TM)
     return;
 
-  auto MM = std::make_shared<SectionMemoryManagerWrapper>();
-
-  RTDyldObjectLinkingLayer ObjLayer([&MM]() { return MM; });
+  RTDyldObjectLinkingLayer<> ObjLayer;
   SimpleCompiler Compile(*TM);
 
   // Create a pair of unrelated modules:
@@ -225,9 +222,9 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoPrematureAllocation) {
     Builder.CreateRet(FourtyTwo);
   }
 
-  auto Obj1 =
-    std::make_shared<object::OwningBinary<object::ObjectFile>>(
-      Compile(*MB1.getModule()));
+  auto Obj1 = Compile(*MB1.getModule());
+  std::vector<object::ObjectFile*> Obj1Set;
+  Obj1Set.push_back(Obj1.getBinary());
 
   ModuleBuilder MB2(Context, "", "dummy");
   {
@@ -239,18 +236,19 @@ TEST_F(RTDyldObjectLinkingLayerExecutionTest, NoPrematureAllocation) {
     Value *Seven = ConstantInt::getSigned(Int32Ty, 7);
     Builder.CreateRet(Seven);
   }
-  auto Obj2 =
-    std::make_shared<object::OwningBinary<object::ObjectFile>>(
-      Compile(*MB2.getModule()));
+  auto Obj2 = Compile(*MB2.getModule());
+  std::vector<object::ObjectFile*> Obj2Set;
+  Obj2Set.push_back(Obj2.getBinary());
 
-  auto NR = std::make_shared<NullResolver>();
-  auto H = cantFail(ObjLayer.addObject(std::move(Obj1), NR));
-  cantFail(ObjLayer.addObject(std::move(Obj2), NR));
-  cantFail(ObjLayer.emitAndFinalize(H));
-  cantFail(ObjLayer.removeObject(H));
-
+  auto SMMW = std::make_shared<SectionMemoryManagerWrapper>();
+  NullResolver NR;
+  auto H = ObjLayer.addObjectSet(std::move(Obj1Set), SMMW, &NR);
+  ObjLayer.addObjectSet(std::move(Obj2Set), SMMW, &NR);
+  ObjLayer.emitAndFinalize(H);
+  ObjLayer.removeObjectSet(H);
+  
   // Only one call to needsToReserveAllocationSpace should have been made.
-  EXPECT_EQ(MM->NeedsToReserveAllocationSpaceCount, 1)
+  EXPECT_EQ(SMMW->NeedsToReserveAllocationSpaceCount, 1)
       << "More than one call to needsToReserveAllocationSpace "
          "(multiple unrelated objects loaded prior to finalization)";
 }

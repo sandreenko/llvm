@@ -86,7 +86,7 @@ public:
   virtual void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                                 const MCFragment *Fragment,
                                 const MCFixup &Fixup, MCValue Target,
-                                uint64_t &FixedValue) = 0;
+                                bool &IsPCRel, uint64_t &FixedValue) = 0;
 
   /// Check whether the difference (A - B) between two symbol references is
   /// fully resolved.

@@ -1062,7 +1062,7 @@ public:
 
   Value *CreateAnd(Value *LHS, Value *RHS, const Twine &Name = "") {
     if (Constant *RC = dyn_cast<Constant>(RHS)) {
-      if (isa<ConstantInt>(RC) && cast<ConstantInt>(RC)->isMinusOne())
+      if (isa<ConstantInt>(RC) && cast<ConstantInt>(RC)->isAllOnesValue())
         return LHS;  // LHS & -1 -> LHS
       if (Constant *LC = dyn_cast<Constant>(LHS))
         return Insert(Folder.CreateAnd(LC, RC), Name);
@@ -1203,22 +1203,22 @@ public:
     return SI;
   }
   FenceInst *CreateFence(AtomicOrdering Ordering,
-                         SyncScope::ID SSID = SyncScope::System,
+                         SynchronizationScope SynchScope = CrossThread,
                          const Twine &Name = "") {
-    return Insert(new FenceInst(Context, Ordering, SSID), Name);
+    return Insert(new FenceInst(Context, Ordering, SynchScope), Name);
   }
   AtomicCmpXchgInst *
   CreateAtomicCmpXchg(Value *Ptr, Value *Cmp, Value *New,
                       AtomicOrdering SuccessOrdering,
                       AtomicOrdering FailureOrdering,
-                      SyncScope::ID SSID = SyncScope::System) {
+                      SynchronizationScope SynchScope = CrossThread) {
     return Insert(new AtomicCmpXchgInst(Ptr, Cmp, New, SuccessOrdering,
-                                        FailureOrdering, SSID));
+                                        FailureOrdering, SynchScope));
   }
   AtomicRMWInst *CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val,
                                  AtomicOrdering Ordering,
-                                 SyncScope::ID SSID = SyncScope::System) {
-    return Insert(new AtomicRMWInst(Op, Ptr, Val, Ordering, SSID));
+                               SynchronizationScope SynchScope = CrossThread) {
+    return Insert(new AtomicRMWInst(Op, Ptr, Val, Ordering, SynchScope));
   }
   Value *CreateGEP(Value *Ptr, ArrayRef<Value *> IdxList,
                    const Twine &Name = "") {
@@ -1517,9 +1517,11 @@ public:
                                 const Twine &Name = "") {
     if (V->getType() == DestTy)
       return V;
-    if (V->getType()->isPtrOrPtrVectorTy() && DestTy->isIntOrIntVectorTy())
+    if (V->getType()->getScalarType()->isPointerTy() &&
+        DestTy->getScalarType()->isIntegerTy())
       return CreatePtrToInt(V, DestTy, Name);
-    if (V->getType()->isIntOrIntVectorTy() && DestTy->isPtrOrPtrVectorTy())
+    if (V->getType()->getScalarType()->isIntegerTy() &&
+        DestTy->getScalarType()->isPointerTy())
       return CreateIntToPtr(V, DestTy, Name);
 
     return CreateBitCast(V, DestTy, Name);

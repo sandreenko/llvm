@@ -190,8 +190,7 @@ void MCWinCOFFStreamer::EmitCOFFSafeSEH(MCSymbol const *Symbol) {
                    << COFF::SCT_COMPLEX_TYPE_SHIFT);
 }
 
-void MCWinCOFFStreamer::EmitCOFFSectionIndex(const MCSymbol *Symbol) {
-  visitUsedSymbol(*Symbol);
+void MCWinCOFFStreamer::EmitCOFFSectionIndex(MCSymbol const *Symbol) {
   MCDataFragment *DF = getOrCreateDataFragment();
   const MCSymbolRefExpr *SRE = MCSymbolRefExpr::create(Symbol, getContext());
   MCFixup Fixup = MCFixup::create(DF->getContents().size(), SRE, FK_SecRel_2);
@@ -199,9 +198,8 @@ void MCWinCOFFStreamer::EmitCOFFSectionIndex(const MCSymbol *Symbol) {
   DF->getContents().resize(DF->getContents().size() + 2, 0);
 }
 
-void MCWinCOFFStreamer::EmitCOFFSecRel32(const MCSymbol *Symbol,
+void MCWinCOFFStreamer::EmitCOFFSecRel32(MCSymbol const *Symbol,
                                          uint64_t Offset) {
-  visitUsedSymbol(*Symbol);
   MCDataFragment *DF = getOrCreateDataFragment();
   // Create Symbol A for the relocation relative reference.
   const MCExpr *MCE = MCSymbolRefExpr::create(Symbol, getContext());

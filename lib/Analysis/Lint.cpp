@@ -405,7 +405,7 @@ void Lint::visitMemoryReference(Instruction &I,
   Assert(!isa<UndefValue>(UnderlyingObject),
          "Undefined behavior: Undef pointer dereference", &I);
   Assert(!isa<ConstantInt>(UnderlyingObject) ||
-             !cast<ConstantInt>(UnderlyingObject)->isMinusOne(),
+             !cast<ConstantInt>(UnderlyingObject)->isAllOnesValue(),
          "Unusual: All-ones pointer dereference", &I);
   Assert(!isa<ConstantInt>(UnderlyingObject) ||
              !cast<ConstantInt>(UnderlyingObject)->isOne(),

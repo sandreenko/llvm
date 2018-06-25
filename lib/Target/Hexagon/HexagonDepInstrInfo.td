@@ -45863,7 +45863,6 @@ tc_30665cb0, TypeST>, Enc_ecbcc8 {
 let Inst{13-0} = 0b00000000000000;
 let Inst{31-21} = 0b10100000000;
 let isSoloAin1 = 1;
-let hasSideEffects = 1;
 }
 def Y2_dccleaninva : HInst<
 (outs),
@@ -45873,7 +45872,6 @@ tc_30665cb0, TypeST>, Enc_ecbcc8 {
 let Inst{13-0} = 0b00000000000000;
 let Inst{31-21} = 0b10100000010;
 let isSoloAin1 = 1;
-let hasSideEffects = 1;
 }
 def Y2_dcfetch : HInst<
 (outs),
@@ -45902,7 +45900,6 @@ tc_30665cb0, TypeST>, Enc_ecbcc8 {
 let Inst{13-0} = 0b00000000000000;
 let Inst{31-21} = 0b10100000001;
 let isSoloAin1 = 1;
-let hasSideEffects = 1;
 }
 def Y2_dczeroa : HInst<
 (outs),
@@ -45912,7 +45909,6 @@ tc_30665cb0, TypeST>, Enc_ecbcc8 {
 let Inst{13-0} = 0b00000000000000;
 let Inst{31-21} = 0b10100000110;
 let isSoloAin1 = 1;
-let hasSideEffects = 1;
 let mayStore = 1;
 }
 def Y2_icinva : HInst<

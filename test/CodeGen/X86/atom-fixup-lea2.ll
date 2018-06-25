@@ -1,6 +1,4 @@
 ; RUN: llc < %s -mcpu=atom -mtriple=i686-linux | FileCheck %s
-; RUN: llc < %s -mcpu=goldmont -mtriple=i686-linux | FileCheck %s
-
 ; CHECK:BB#5
 ; CHECK-NEXT:leal
 ; CHECK-NEXT:leal

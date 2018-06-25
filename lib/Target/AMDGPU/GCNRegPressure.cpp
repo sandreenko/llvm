@@ -1,4 +1,4 @@
-//===- GCNRegPressure.cpp -------------------------------------------------===//
+//===------------------------- GCNRegPressure.cpp - -----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,30 +6,17 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+//
+/// \file
+//
+//===----------------------------------------------------------------------===//
 
 #include "GCNRegPressure.h"
-#include "AMDGPUSubtarget.h"
-#include "SIRegisterInfo.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/CodeGen/LiveInterval.h"
-#include "llvm/CodeGen/LiveIntervalAnalysis.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineOperand.h"
-#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterPressure.h"
-#include "llvm/CodeGen/SlotIndexes.h"
-#include "llvm/MC/LaneBitmask.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include <algorithm>
-#include <cassert>
 
 using namespace llvm;
 
-#define DEBUG_TYPE "machine-scheduler"
+#define DEBUG_TYPE "misched"
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 LLVM_DUMP_METHOD
@@ -76,6 +63,7 @@ static bool isEqual(const GCNRPTracker::LiveRegSet &S1,
   }
   return true;
 }
+
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -119,7 +107,7 @@ void GCNRegPressure::inc(unsigned Reg,
     assert(PrevMask < NewMask);
 
     Value[Kind == SGPR_TUPLE ? SGPR32 : VGPR32] +=
-      Sign * (~PrevMask & NewMask).getNumLanes();
+      Sign * countPopulation((~PrevMask & NewMask).getAsInteger());
 
     if (PrevMask.none()) {
       assert(NewMask.any());
@@ -189,6 +177,7 @@ void GCNRegPressure::print(raw_ostream &OS, const SISubtarget *ST) const {
 }
 #endif
 
+
 static LaneBitmask getDefRegMask(const MachineOperand &MO,
                                  const MachineRegisterInfo &MRI) {
   assert(MO.isDef() && MO.isReg() &&
@@ -212,7 +201,7 @@ static LaneBitmask getUsedRegMask(const MachineOperand &MO,
     return MRI.getTargetRegisterInfo()->getSubRegIndexLaneMask(SubReg);
 
   auto MaxMask = MRI.getMaxLaneMaskForVReg(MO.getReg());
-  if (MaxMask == LaneBitmask::getLane(0)) // cannot have subregs
+  if (MaxMask.getAsInteger() == 1) // cannot have subregs
     return MaxMask;
 
   // For a tentative schedule LIS isn't updated yet but livemask should remain

@@ -15,7 +15,6 @@
 #define LLVM_EXECUTIONENGINE_ORC_COMPILEUTILS_H
 
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ExecutionEngine/ObjectCache.h"
 #include "llvm/ExecutionEngine/ObjectMemoryBuffer.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Object/Binary.h"
@@ -39,22 +38,11 @@ namespace orc {
 ///        ObjectFile.
 class SimpleCompiler {
 public:
-
-  using CompileResult = object::OwningBinary<object::ObjectFile>;
-
   /// @brief Construct a simple compile functor with the given target.
-  SimpleCompiler(TargetMachine &TM, ObjectCache *ObjCache = nullptr)
-    : TM(TM), ObjCache(ObjCache) {}
-
-  /// @brief Set an ObjectCache to query before compiling.
-  void setObjectCache(ObjectCache *NewCache) { ObjCache = NewCache; }
+  SimpleCompiler(TargetMachine &TM) : TM(TM) {}
 
   /// @brief Compile a Module to an ObjectFile.
-  CompileResult operator()(Module &M) {
-    CompileResult CachedObject = tryToLoadFromObjectCache(M);
-    if (CachedObject.getBinary())
-      return CachedObject;
-
+  object::OwningBinary<object::ObjectFile> operator()(Module &M) const {
     SmallVector<char, 0> ObjBufferSV;
     raw_svector_ostream ObjStream(ObjBufferSV);
 
@@ -67,43 +55,16 @@ public:
         new ObjectMemoryBuffer(std::move(ObjBufferSV)));
     Expected<std::unique_ptr<object::ObjectFile>> Obj =
         object::ObjectFile::createObjectFile(ObjBuffer->getMemBufferRef());
-    if (Obj) {
-      notifyObjectCompiled(M, *ObjBuffer);
-      return CompileResult(std::move(*Obj), std::move(ObjBuffer));
-    }
+    using OwningObj = object::OwningBinary<object::ObjectFile>;
+    if (Obj)
+      return OwningObj(std::move(*Obj), std::move(ObjBuffer));
     // TODO: Actually report errors helpfully.
     consumeError(Obj.takeError());
-    return CompileResult(nullptr, nullptr);
+    return OwningObj(nullptr, nullptr);
   }
 
 private:
-
-  CompileResult tryToLoadFromObjectCache(const Module &M) {
-    if (!ObjCache)
-      return CompileResult();
-
-    std::unique_ptr<MemoryBuffer> ObjBuffer = ObjCache->getObject(&M);
-    if (!ObjBuffer)
-      return CompileResult();
-
-    Expected<std::unique_ptr<object::ObjectFile>> Obj =
-        object::ObjectFile::createObjectFile(ObjBuffer->getMemBufferRef());
-    if (!Obj) {
-      // TODO: Actually report errors helpfully.
-      consumeError(Obj.takeError());
-      return CompileResult();
-    }
-
-    return CompileResult(std::move(*Obj), std::move(ObjBuffer));
-  }
-
-  void notifyObjectCompiled(const Module &M, const MemoryBuffer &ObjBuffer) {
-    if (ObjCache)
-      ObjCache->notifyObjectCompiled(&M, ObjBuffer.getMemBufferRef());
-  }
-
   TargetMachine &TM;
-  ObjectCache *ObjCache = nullptr;
 };
 
 } // end namespace orc

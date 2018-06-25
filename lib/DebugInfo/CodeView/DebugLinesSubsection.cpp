@@ -1,4 +1,4 @@
-//===- DebugLinesSubsection.cpp -------------------------------------------===//
+//===- DebugLinesSubsection.cpp -------------------------------*- C++-*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,21 +8,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/DebugLinesSubsection.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
+
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/DebugChecksumsSubsection.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
-#include "llvm/Support/Error.h"
-#include <cassert>
-#include <cstdint>
+#include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
+#include "llvm/DebugInfo/CodeView/DebugSubsectionRecord.h"
 
 using namespace llvm;
 using namespace llvm::codeview;
 
 Error LineColumnExtractor::operator()(BinaryStreamRef Stream, uint32_t &Len,
                                       LineColumnEntry &Item) {
+  using namespace codeview;
   const LineBlockFragmentHeader *BlockHeader;
   BinaryStreamReader Reader(Stream);
   if (auto EC = Reader.readObject(BlockHeader))

@@ -24,6 +24,7 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/TargetRegistry.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -77,11 +78,11 @@ public:
   void updateSymbolAddress(const SymbolRef &SymRef, uint64_t Addr);
 
   // Methods for type inquiry through isa, cast and dyn_cast
-  static bool classof(const Binary *v) {
+  static inline bool classof(const Binary *v) {
     return (isa<ELFObjectFile<ELFT>>(v) &&
             classof(cast<ELFObjectFile<ELFT>>(v)));
   }
-  static bool classof(const ELFObjectFile<ELFT> *v) {
+  static inline bool classof(const ELFObjectFile<ELFT> *v) {
     return v->isDyldType();
   }
 };
@@ -122,8 +123,7 @@ void DyldELFObject<ELFT>::updateSymbolAddress(const SymbolRef &SymRef,
 }
 
 class LoadedELFObjectInfo final
-    : public LoadedObjectInfoHelper<LoadedELFObjectInfo,
-                                    RuntimeDyld::LoadedObjectInfo> {
+    : public RuntimeDyld::LoadedObjectInfoHelper<LoadedELFObjectInfo> {
 public:
   LoadedELFObjectInfo(RuntimeDyldImpl &RTDyld, ObjSectionToIDMap ObjSecToIDMap)
       : LoadedObjectInfoHelper(RTDyld, std::move(ObjSecToIDMap)) {}

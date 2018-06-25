@@ -1,4 +1,4 @@
-//===- TargetPassConfig.h - Code Generation pass options --------*- C++ -*-===//
+//===-- TargetPassConfig.h - Code Generation pass options -------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -16,23 +16,19 @@
 
 #include "llvm/Pass.h"
 #include "llvm/Support/CodeGen.h"
-#include <cassert> 
 #include <string>
 
 namespace llvm {
 
-class LLVMTargetMachine;
-struct MachineSchedContext;
 class PassConfigImpl;
 class ScheduleDAGInstrs;
+class LLVMTargetMachine;
+struct MachineSchedContext;
 
 // The old pass manager infrastructure is hidden in a legacy namespace now.
 namespace legacy {
-
 class PassManagerBase;
-
-} // end namespace legacy
-
+}
 using legacy::PassManagerBase;
 
 /// Discriminated union of Pass ID types.
@@ -54,11 +50,10 @@ class IdentifyingPassPtr {
     AnalysisID ID;
     Pass *P;
   };
-  bool IsInstance = false;
-
+  bool IsInstance;
 public:
-  IdentifyingPassPtr() : P(nullptr) {}
-  IdentifyingPassPtr(AnalysisID IDPtr) : ID(IDPtr) {}
+  IdentifyingPassPtr() : P(nullptr), IsInstance(false) {}
+  IdentifyingPassPtr(AnalysisID IDPtr) : ID(IDPtr), IsInstance(false) {}
   IdentifyingPassPtr(Pass *InstancePtr) : P(InstancePtr), IsInstance(true) {}
 
   bool isValid() const { return P; }
@@ -68,7 +63,6 @@ public:
     assert(!IsInstance && "Not a Pass ID");
     return ID;
   }
-
   Pass *getInstance() const {
     assert(IsInstance && "Not a Pass Instance");
     return P;
@@ -99,42 +93,31 @@ public:
   static char PostRAMachineLICMID;
 
 private:
-  PassManagerBase *PM = nullptr;
+  PassManagerBase *PM;
   AnalysisID StartBefore = nullptr;
   AnalysisID StartAfter = nullptr;
   AnalysisID StopBefore = nullptr;
   AnalysisID StopAfter = nullptr;
-  bool Started = true;
-  bool Stopped = false;
-  bool AddingMachinePasses = false;
-
-  /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
-  /// a portion of the normal code-gen pass sequence.
-  ///
-  /// If the StartAfter and StartBefore pass ID is zero, then compilation will
-  /// begin at the normal point; otherwise, clear the Started flag to indicate
-  /// that passes should not be added until the starting pass is seen.  If the
-  /// Stop pass ID is zero, then compilation will continue to the end.
-  ///
-  /// This function expects that at least one of the StartAfter or the
-  /// StartBefore pass IDs is null.
-  void setStartStopPasses();
+  bool Started;
+  bool Stopped;
+  bool AddingMachinePasses;
 
 protected:
   LLVMTargetMachine *TM;
-  PassConfigImpl *Impl = nullptr; // Internal data structures
-  bool Initialized = false; // Flagged after all passes are configured.
+  PassConfigImpl *Impl; // Internal data structures
+  bool Initialized;     // Flagged after all passes are configured.
 
   // Target Pass Options
   // Targets provide a default setting, user flags override.
-  bool DisableVerify = false;
+  //
+  bool DisableVerify;
 
   /// Default setting for -enable-tail-merge on this target.
-  bool EnableTailMerge = true;
+  bool EnableTailMerge;
 
   /// Require processing of functions such that callees are generated before
   /// callers.
-  bool RequireCodeGenSCCOrder = false;
+  bool RequireCodeGenSCCOrder;
 
   /// Add the actual instruction selection passes. This does not include
   /// preparation passes on IR.
@@ -159,25 +142,27 @@ public:
 
   CodeGenOpt::Level getOptLevel() const;
 
-  /// Describe the status of the codegen
-  /// pipeline set by this target pass config.
-  /// Having a limited codegen pipeline means that options
-  /// have been used to restrict what codegen is doing.
-  /// In particular, that means that codegen won't emit
-  /// assembly code.
-  bool hasLimitedCodeGenPipeline() const;
-
-  /// If hasLimitedCodeGenPipeline is true, this method
-  /// returns a string with the name of the options, separated
-  /// by \p Separator that caused this pipeline to be limited.
-  std::string
-  getLimitedCodeGenPipelineReason(const char *Separator = "/") const;
-
-  /// Check if the codegen pipeline is limited in such a way that it
-  /// won't be complete. When the codegen pipeline is not complete,
-  /// this means it may not be possible to generate assembly from it.
-  bool willCompleteCodeGenPipeline() const {
-    return !hasLimitedCodeGenPipeline() || (!StopAfter && !StopBefore);
+  /// Set the StartAfter, StartBefore and StopAfter passes to allow running only
+  /// a portion of the normal code-gen pass sequence.
+  ///
+  /// If the StartAfter and StartBefore pass ID is zero, then compilation will
+  /// begin at the normal point; otherwise, clear the Started flag to indicate
+  /// that passes should not be added until the starting pass is seen.  If the
+  /// Stop pass ID is zero, then compilation will continue to the end.
+  ///
+  /// This function expects that at least one of the StartAfter or the
+  /// StartBefore pass IDs is null.
+  void setStartStopPasses(AnalysisID StartBefore, AnalysisID StartAfter,
+                          AnalysisID StopBefore, AnalysisID StopAfter) {
+    assert(!(StartBefore && StartAfter) &&
+           "Start after and start before passes are given");
+    assert(!(StopBefore && StopAfter) &&
+           "Stop after and stop before passed are given");
+    this->StartBefore = StartBefore;
+    this->StartAfter = StartAfter;
+    this->StopBefore = StopBefore;
+    this->StopAfter = StopAfter;
+    Started = (StartAfter == nullptr) && (StartBefore == nullptr);
   }
 
   void setDisableVerify(bool Disable) { setOpt(DisableVerify, Disable); }
@@ -311,6 +296,7 @@ public:
 
   /// printAndVerify - Add a pass to dump then verify the machine function, if
   /// those steps are enabled.
+  ///
   void printAndVerify(const std::string &Banner);
 
   /// Add a pass to print the machine function if printing is enabled.
@@ -444,4 +430,4 @@ protected:
 
 } // end namespace llvm
 
-#endif // LLVM_CODEGEN_TARGETPASSCONFIG_H
+#endif

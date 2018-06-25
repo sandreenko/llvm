@@ -45,9 +45,6 @@ public:
                          const TargetMachine &TM) const override;
 };
 
-/// This implementation is used for AArch64 COFF targets.
-class AArch64_COFFTargetObjectFile : public TargetLoweringObjectFileCOFF {};
-
 } // end namespace llvm
 
 #endif

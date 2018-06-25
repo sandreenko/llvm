@@ -33,8 +33,8 @@ public:
 
   ~ARMWinCOFFObjectWriter() override = default;
 
-  unsigned getRelocType(MCContext &Ctx, const MCValue &Target,
-                        const MCFixup &Fixup, bool IsCrossSection,
+  unsigned getRelocType(const MCValue &Target, const MCFixup &Fixup,
+                        bool IsCrossSection,
                         const MCAsmBackend &MAB) const override;
 
   bool recordRelocation(const MCFixup &) const override;
@@ -42,8 +42,7 @@ public:
 
 } // end anonymous namespace
 
-unsigned ARMWinCOFFObjectWriter::getRelocType(MCContext &Ctx,
-                                              const MCValue &Target,
+unsigned ARMWinCOFFObjectWriter::getRelocType(const MCValue &Target,
                                               const MCFixup &Fixup,
                                               bool IsCrossSection,
                                               const MCAsmBackend &MAB) const {

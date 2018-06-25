@@ -16,6 +16,8 @@
 namespace llvm {
 
 class ARMElfTargetObjectFile : public TargetLoweringObjectFileELF {
+  mutable bool genExecuteOnly = false;
+
 protected:
   const MCSection *AttributesSection = nullptr;
 

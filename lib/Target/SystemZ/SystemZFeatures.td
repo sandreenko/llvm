@@ -68,19 +68,9 @@ def FeaturePopulationCount : SystemZFeature<
   "Assume that the population-count facility is installed"
 >;
 
-def FeatureMessageSecurityAssist3 : SystemZFeature<
-  "message-security-assist-extension3", "MessageSecurityAssist3",
-  "Assume that the message-security-assist extension facility 3 is installed"
->;
-
 def FeatureMessageSecurityAssist4 : SystemZFeature<
   "message-security-assist-extension4", "MessageSecurityAssist4",
   "Assume that the message-security-assist extension facility 4 is installed"
->;
-
-def FeatureResetReferenceBitsMultiple : SystemZFeature<
-  "reset-reference-bits-multiple", "ResetReferenceBitsMultiple",
-  "Assume that the reset-reference-bits-multiple facility is installed"
 >;
 
 def Arch9NewFeatures : SystemZFeatureList<[
@@ -91,9 +81,7 @@ def Arch9NewFeatures : SystemZFeatureList<[
     FeatureInterlockedAccess1,
     FeatureLoadStoreOnCond,
     FeaturePopulationCount,
-    FeatureMessageSecurityAssist3,
-    FeatureMessageSecurityAssist4,
-    FeatureResetReferenceBitsMultiple
+    FeatureMessageSecurityAssist4
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -132,19 +120,13 @@ def FeatureDFPZonedConversion : SystemZFeature<
   "Assume that the DFP zoned-conversion facility is installed"
 >;
 
-def FeatureEnhancedDAT2 : SystemZFeature<
-  "enhanced-dat-2", "EnhancedDAT2",
-  "Assume that the enhanced-DAT facility 2 is installed"
->;
-
 def Arch10NewFeatures : SystemZFeatureList<[
     FeatureExecutionHint,
     FeatureLoadAndTrap,
     FeatureMiscellaneousExtensions,
     FeatureProcessorAssist,
     FeatureTransactionalExecution,
-    FeatureDFPZonedConversion,
-    FeatureEnhancedDAT2
+    FeatureDFPZonedConversion
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -189,58 +171,6 @@ def Arch11NewFeatures : SystemZFeatureList<[
 
 //===----------------------------------------------------------------------===//
 //
-// New features added in the Twelvth Edition of the z/Architecture
-//
-//===----------------------------------------------------------------------===//
-
-def FeatureMiscellaneousExtensions2 : SystemZFeature<
-  "miscellaneous-extensions-2", "MiscellaneousExtensions2",
-  "Assume that the miscellaneous-extensions facility 2 is installed"
->;
-
-def FeatureGuardedStorage : SystemZFeature<
-  "guarded-storage", "GuardedStorage",
-  "Assume that the guarded-storage facility is installed"
->;
-
-def FeatureMessageSecurityAssist7 : SystemZFeature<
-  "message-security-assist-extension7", "MessageSecurityAssist7",
-  "Assume that the message-security-assist extension facility 7 is installed"
->;
-
-def FeatureMessageSecurityAssist8 : SystemZFeature<
-  "message-security-assist-extension8", "MessageSecurityAssist8",
-  "Assume that the message-security-assist extension facility 8 is installed"
->;
-
-def FeatureVectorEnhancements1 : SystemZFeature<
-  "vector-enhancements-1", "VectorEnhancements1",
-  "Assume that the vector enhancements facility 1 is installed"
->;
-def FeatureNoVectorEnhancements1 : SystemZMissingFeature<"VectorEnhancements1">;
-
-def FeatureVectorPackedDecimal : SystemZFeature<
-  "vector-packed-decimal", "VectorPackedDecimal",
-  "Assume that the vector packed decimal facility is installed"
->;
-
-def FeatureInsertReferenceBitsMultiple : SystemZFeature<
-  "insert-reference-bits-multiple", "InsertReferenceBitsMultiple",
-  "Assume that the insert-reference-bits-multiple facility is installed"
->;
-
-def Arch12NewFeatures : SystemZFeatureList<[
-    FeatureMiscellaneousExtensions2,
-    FeatureGuardedStorage,
-    FeatureMessageSecurityAssist7,
-    FeatureMessageSecurityAssist8,
-    FeatureVectorEnhancements1,
-    FeatureVectorPackedDecimal,
-    FeatureInsertReferenceBitsMultiple
-]>;
-
-//===----------------------------------------------------------------------===//
-//
 // Cumulative supported and unsupported feature sets
 //
 //===----------------------------------------------------------------------===//
@@ -253,13 +183,9 @@ def Arch10SupportedFeatures
   : SystemZFeatureAdd<Arch9SupportedFeatures.List,  Arch10NewFeatures.List>;
 def Arch11SupportedFeatures
   : SystemZFeatureAdd<Arch10SupportedFeatures.List, Arch11NewFeatures.List>;
-def Arch12SupportedFeatures
-  : SystemZFeatureAdd<Arch11SupportedFeatures.List, Arch12NewFeatures.List>;
 
-def Arch12UnsupportedFeatures
-  : SystemZFeatureList<[]>;
 def Arch11UnsupportedFeatures
-  : SystemZFeatureAdd<Arch12UnsupportedFeatures.List, Arch12NewFeatures.List>;
+  : SystemZFeatureList<[]>;
 def Arch10UnsupportedFeatures
   : SystemZFeatureAdd<Arch11UnsupportedFeatures.List, Arch11NewFeatures.List>;
 def Arch9UnsupportedFeatures

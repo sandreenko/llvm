@@ -16,18 +16,12 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <utility>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "tti"
-
-static cl::opt<bool> UseWideMemcpyLoopLowering(
-    "use-wide-memcpy-loop-lowering", cl::init(false),
-    cl::desc("Enables the new wide memcpy loop lowering in Transforms/Utils."),
-    cl::Hidden);
 
 namespace {
 /// \brief No-op implementation of the TTI interface using the utility base
@@ -82,11 +76,6 @@ int TargetTransformInfo::getGEPCost(Type *PointeeType, const Value *Ptr,
   return TTIImpl->getGEPCost(PointeeType, Ptr, Operands);
 }
 
-int TargetTransformInfo::getExtCost(const Instruction *I,
-                                    const Value *Src) const {
-  return TTIImpl->getExtCost(I, Src);
-}
-
 int TargetTransformInfo::getIntrinsicCost(
     Intrinsic::ID IID, Type *RetTy, ArrayRef<const Value *> Arguments) const {
   int Cost = TTIImpl->getIntrinsicCost(IID, RetTy, Arguments);
@@ -100,9 +89,8 @@ TargetTransformInfo::getEstimatedNumberOfCaseClusters(const SwitchInst &SI,
   return TTIImpl->getEstimatedNumberOfCaseClusters(SI, JTSize);
 }
 
-int TargetTransformInfo::getUserCost(const User *U,
-    ArrayRef<const Value *> Operands) const {
-  int Cost = TTIImpl->getUserCost(U, Operands);
+int TargetTransformInfo::getUserCost(const User *U) const {
+  int Cost = TTIImpl->getUserCost(U);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
@@ -128,8 +116,8 @@ bool TargetTransformInfo::isLoweredToCall(const Function *F) const {
 }
 
 void TargetTransformInfo::getUnrollingPreferences(
-    Loop *L, ScalarEvolution &SE, UnrollingPreferences &UP) const {
-  return TTIImpl->getUnrollingPreferences(L, SE, UP);
+    Loop *L, UnrollingPreferences &UP) const {
+  return TTIImpl->getUnrollingPreferences(L, UP);
 }
 
 bool TargetTransformInfo::isLegalAddImmediate(int64_t Imm) const {
@@ -144,10 +132,9 @@ bool TargetTransformInfo::isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV,
                                                 int64_t BaseOffset,
                                                 bool HasBaseReg,
                                                 int64_t Scale,
-                                                unsigned AddrSpace,
-                                                Instruction *I) const {
+                                                unsigned AddrSpace) const {
   return TTIImpl->isLegalAddressingMode(Ty, BaseGV, BaseOffset, HasBaseReg,
-                                        Scale, AddrSpace, I);
+                                        Scale, AddrSpace);
 }
 
 bool TargetTransformInfo::isLSRCostLess(LSRCost &C1, LSRCost &C2) const {
@@ -167,7 +154,7 @@ bool TargetTransformInfo::isLegalMaskedGather(Type *DataType) const {
 }
 
 bool TargetTransformInfo::isLegalMaskedScatter(Type *DataType) const {
-  return TTIImpl->isLegalMaskedScatter(DataType);
+  return TTIImpl->isLegalMaskedGather(DataType);
 }
 
 bool TargetTransformInfo::prefersVectorizedAddressing() const {
@@ -185,8 +172,9 @@ int TargetTransformInfo::getScalingFactorCost(Type *Ty, GlobalValue *BaseGV,
   return Cost;
 }
 
-bool TargetTransformInfo::LSRWithInstrQueries() const {
-  return TTIImpl->LSRWithInstrQueries();
+bool TargetTransformInfo::isFoldableMemAccessOffset(Instruction *I,
+                                                    int64_t Offset) const {
+  return TTIImpl->isFoldableMemAccessOffset(I, Offset);
 }
 
 bool TargetTransformInfo::isTruncateFree(Type *Ty1, Type *Ty2) const {
@@ -319,16 +307,6 @@ bool TargetTransformInfo::shouldConsiderAddressTypePromotion(
 
 unsigned TargetTransformInfo::getCacheLineSize() const {
   return TTIImpl->getCacheLineSize();
-}
-
-llvm::Optional<unsigned> TargetTransformInfo::getCacheSize(CacheLevel Level)
-  const {
-  return TTIImpl->getCacheSize(Level);
-}
-
-llvm::Optional<unsigned> TargetTransformInfo::getCacheAssociativity(
-  CacheLevel Level) const {
-  return TTIImpl->getCacheAssociativity(Level);
 }
 
 unsigned TargetTransformInfo::getPrefetchDistance() const {
@@ -477,9 +455,9 @@ int TargetTransformInfo::getAddressComputationCost(Type *Tp,
   return Cost;
 }
 
-int TargetTransformInfo::getArithmeticReductionCost(unsigned Opcode, Type *Ty,
-                                                    bool IsPairwiseForm) const {
-  int Cost = TTIImpl->getArithmeticReductionCost(Opcode, Ty, IsPairwiseForm);
+int TargetTransformInfo::getReductionCost(unsigned Opcode, Type *Ty,
+                                          bool IsPairwiseForm) const {
+  int Cost = TTIImpl->getReductionCost(Opcode, Ty, IsPairwiseForm);
   assert(Cost >= 0 && "TTI should not produce negative costs!");
   return Cost;
 }
@@ -501,25 +479,6 @@ unsigned TargetTransformInfo::getAtomicMemIntrinsicMaxElementSize() const {
 Value *TargetTransformInfo::getOrCreateResultFromMemIntrinsic(
     IntrinsicInst *Inst, Type *ExpectedType) const {
   return TTIImpl->getOrCreateResultFromMemIntrinsic(Inst, ExpectedType);
-}
-
-Type *TargetTransformInfo::getMemcpyLoopLoweringType(LLVMContext &Context,
-                                                     Value *Length,
-                                                     unsigned SrcAlign,
-                                                     unsigned DestAlign) const {
-  return TTIImpl->getMemcpyLoopLoweringType(Context, Length, SrcAlign,
-                                            DestAlign);
-}
-
-void TargetTransformInfo::getMemcpyLoopResidualLoweringType(
-    SmallVectorImpl<Type *> &OpsOut, LLVMContext &Context,
-    unsigned RemainingBytes, unsigned SrcAlign, unsigned DestAlign) const {
-  TTIImpl->getMemcpyLoopResidualLoweringType(OpsOut, Context, RemainingBytes,
-                                             SrcAlign, DestAlign);
-}
-
-bool TargetTransformInfo::useWideIRMemcpyLoopLowering() const {
-  return UseWideMemcpyLoopLowering;
 }
 
 bool TargetTransformInfo::areInlineCompatible(const Function *Caller,

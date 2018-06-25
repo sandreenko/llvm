@@ -156,11 +156,18 @@ class RenamePassData {
 public:
   typedef std::vector<Value *> ValVector;
 
-  RenamePassData(BasicBlock *B, BasicBlock *P, ValVector V)
-      : BB(B), Pred(P), Values(std::move(V)) {}
+  RenamePassData() : BB(nullptr), Pred(nullptr), Values() {}
+  RenamePassData(BasicBlock *B, BasicBlock *P, const ValVector &V)
+      : BB(B), Pred(P), Values(V) {}
   BasicBlock *BB;
   BasicBlock *Pred;
   ValVector Values;
+
+  void swap(RenamePassData &RHS) {
+    std::swap(BB, RHS.BB);
+    std::swap(Pred, RHS.Pred);
+    Values.swap(RHS.Values);
+  }
 };
 
 /// \brief This assigns and keeps a per-bb relative ordering of load/store
@@ -622,8 +629,8 @@ void PromoteMem2Reg::run() {
                 });
 
     unsigned CurrentVersion = 0;
-    for (BasicBlock *BB : PHIBlocks)
-      QueuePhiNode(BB, AllocaNum, CurrentVersion);
+    for (unsigned i = 0, e = PHIBlocks.size(); i != e; ++i)
+      QueuePhiNode(PHIBlocks[i], AllocaNum, CurrentVersion);
   }
 
   if (Allocas.empty())
@@ -645,7 +652,8 @@ void PromoteMem2Reg::run() {
   std::vector<RenamePassData> RenamePassWorkList;
   RenamePassWorkList.emplace_back(&F.front(), nullptr, std::move(Values));
   do {
-    RenamePassData RPD = std::move(RenamePassWorkList.back());
+    RenamePassData RPD;
+    RPD.swap(RenamePassWorkList.back());
     RenamePassWorkList.pop_back();
     // RenamePass may add new worklist entries.
     RenamePass(RPD.BB, RPD.Pred, RPD.Values, RenamePassWorkList);
@@ -655,7 +663,9 @@ void PromoteMem2Reg::run() {
   Visited.clear();
 
   // Remove the allocas themselves from the function.
-  for (Instruction *A : Allocas) {
+  for (unsigned i = 0, e = Allocas.size(); i != e; ++i) {
+    Instruction *A = Allocas[i];
+
     // If there are any uses of the alloca instructions left, they must be in
     // unreachable basic blocks that were not processed by walking the dominator
     // tree. Just delete the users now.
@@ -665,8 +675,8 @@ void PromoteMem2Reg::run() {
   }
 
   // Remove alloca's dbg.declare instrinsics from the function.
-  for (DbgDeclareInst *DDI : AllocaDbgDeclares)
-    if (DDI)
+  for (unsigned i = 0, e = AllocaDbgDeclares.size(); i != e; ++i)
+    if (DbgDeclareInst *DDI = AllocaDbgDeclares[i])
       DDI->eraseFromParent();
 
   // Loop over all of the PHI nodes and see if there are any that we can get
@@ -752,8 +762,8 @@ void PromoteMem2Reg::run() {
     while ((SomePHI = dyn_cast<PHINode>(BBI++)) &&
            SomePHI->getNumIncomingValues() == NumBadPreds) {
       Value *UndefVal = UndefValue::get(SomePHI->getType());
-      for (BasicBlock *Pred : Preds)
-        SomePHI->addIncoming(UndefVal, Pred);
+      for (unsigned pred = 0, e = Preds.size(); pred != e; ++pred)
+        SomePHI->addIncoming(UndefVal, Preds[pred]);
     }
   }
 
@@ -824,7 +834,9 @@ void PromoteMem2Reg::ComputeLiveInBlocks(
     // Since the value is live into BB, it is either defined in a predecessor or
     // live into it to.  Add the preds to the worklist unless they are a
     // defining block.
-    for (BasicBlock *P : predecessors(BB)) {
+    for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+      BasicBlock *P = *PI;
+
       // The value is not live into a predecessor if it defines the value.
       if (DefBlocks.count(P))
         continue;

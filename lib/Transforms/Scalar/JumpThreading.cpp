@@ -25,7 +25,6 @@
 #include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
@@ -64,11 +63,6 @@ ImplicationSearchThreshold(
            "condition to use to thread over a weaker condition"),
   cl::init(3), cl::Hidden);
 
-static cl::opt<bool> PrintLVIAfterJumpThreading(
-    "print-lvi-after-jump-threading",
-    cl::desc("Print the LazyValueInfo cache after JumpThreading"), cl::init(false),
-    cl::Hidden);
-
 namespace {
   /// This pass performs 'jump threading', which looks at blocks that have
   /// multiple predecessors and multiple successors.  If one or more of the
@@ -98,10 +92,9 @@ namespace {
     bool runOnFunction(Function &F) override;
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
-      if (PrintLVIAfterJumpThreading)
-        AU.addRequired<DominatorTreeWrapperPass>();
       AU.addRequired<AAResultsWrapperPass>();
       AU.addRequired<LazyValueInfoWrapperPass>();
+      AU.addPreserved<LazyValueInfoWrapperPass>();
       AU.addPreserved<GlobalsAAWrapperPass>();
       AU.addRequired<TargetLibraryInfoWrapperPass>();
     }
@@ -126,116 +119,7 @@ JumpThreadingPass::JumpThreadingPass(int T) {
   BBDupThreshold = (T == -1) ? BBDuplicateThreshold : unsigned(T);
 }
 
-// Update branch probability information according to conditional
-// branch probablity. This is usually made possible for cloned branches
-// in inline instances by the context specific profile in the caller.
-// For instance,
-//
-//  [Block PredBB]
-//  [Branch PredBr]
-//  if (t) {
-//     Block A;
-//  } else {
-//     Block B;
-//  }
-//
-//  [Block BB]
-//  cond = PN([true, %A], [..., %B]); // PHI node
-//  [Branch CondBr]
-//  if (cond) {
-//    ...  // P(cond == true) = 1%
-//  }
-//
-//  Here we know that when block A is taken, cond must be true, which means
-//      P(cond == true | A) = 1
-//
-//  Given that P(cond == true) = P(cond == true | A) * P(A) +
-//                               P(cond == true | B) * P(B)
-//  we get
-//     P(cond == true ) = P(A) + P(cond == true | B) * P(B)
-//
-//  which gives us:
-//     P(A) <= P(c == true), i.e.
-//     P(t == true) <= P(cond == true)
-//
-//  In other words, if we know P(cond == true), we know that P(t == true)
-//  can not be greater than 1%.
-static void updatePredecessorProfileMetadata(PHINode *PN, BasicBlock *BB) {
-  BranchInst *CondBr = dyn_cast<BranchInst>(BB->getTerminator());
-  if (!CondBr)
-    return;
-
-  BranchProbability BP;
-  uint64_t TrueWeight, FalseWeight;
-  if (!CondBr->extractProfMetadata(TrueWeight, FalseWeight))
-    return;
-
-  // Returns the outgoing edge of the dominating predecessor block
-  // that leads to the PhiNode's incoming block:
-  auto GetPredOutEdge =
-      [](BasicBlock *IncomingBB,
-         BasicBlock *PhiBB) -> std::pair<BasicBlock *, BasicBlock *> {
-    auto *PredBB = IncomingBB;
-    auto *SuccBB = PhiBB;
-    for (;;) {
-      BranchInst *PredBr = dyn_cast<BranchInst>(PredBB->getTerminator());
-      if (PredBr && PredBr->isConditional())
-        return {PredBB, SuccBB};
-      auto *SinglePredBB = PredBB->getSinglePredecessor();
-      if (!SinglePredBB)
-        return {nullptr, nullptr};
-      SuccBB = PredBB;
-      PredBB = SinglePredBB;
-    }
-  };
-
-  for (unsigned i = 0, e = PN->getNumIncomingValues(); i != e; ++i) {
-    Value *PhiOpnd = PN->getIncomingValue(i);
-    ConstantInt *CI = dyn_cast<ConstantInt>(PhiOpnd);
-
-    if (!CI || !CI->getType()->isIntegerTy(1))
-      continue;
-
-    BP = (CI->isOne() ? BranchProbability::getBranchProbability(
-                            TrueWeight, TrueWeight + FalseWeight)
-                      : BranchProbability::getBranchProbability(
-                            FalseWeight, TrueWeight + FalseWeight));
-
-    auto PredOutEdge = GetPredOutEdge(PN->getIncomingBlock(i), BB);
-    if (!PredOutEdge.first)
-      return;
-
-    BasicBlock *PredBB = PredOutEdge.first;
-    BranchInst *PredBr = cast<BranchInst>(PredBB->getTerminator());
-
-    uint64_t PredTrueWeight, PredFalseWeight;
-    // FIXME: We currently only set the profile data when it is missing.
-    // With PGO, this can be used to refine even existing profile data with
-    // context information. This needs to be done after more performance
-    // testing.
-    if (PredBr->extractProfMetadata(PredTrueWeight, PredFalseWeight))
-      continue;
-
-    // We can not infer anything useful when BP >= 50%, because BP is the
-    // upper bound probability value.
-    if (BP >= BranchProbability(50, 100))
-      continue;
-
-    SmallVector<uint32_t, 2> Weights;
-    if (PredBr->getSuccessor(0) == PredOutEdge.second) {
-      Weights.push_back(BP.getNumerator());
-      Weights.push_back(BP.getCompl().getNumerator());
-    } else {
-      Weights.push_back(BP.getCompl().getNumerator());
-      Weights.push_back(BP.getNumerator());
-    }
-    PredBr->setMetadata(LLVMContext::MD_prof,
-                        MDBuilder(PredBr->getParent()->getContext())
-                            .createBranchWeights(Weights));
-  }
-}
-
-/// runOnFunction - Toplevel algorithm.
+/// runOnFunction - Top level algorithm.
 ///
 bool JumpThreading::runOnFunction(Function &F) {
   if (skipFunction(F))
@@ -252,14 +136,8 @@ bool JumpThreading::runOnFunction(Function &F) {
     BFI.reset(new BlockFrequencyInfo(F, *BPI, LI));
   }
 
-  bool Changed = Impl.runImpl(F, TLI, LVI, AA, HasProfileData, std::move(BFI),
-                              std::move(BPI));
-  if (PrintLVIAfterJumpThreading) {
-    dbgs() << "LVI for function '" << F.getName() << "':\n";
-    LVI->printLVI(F, getAnalysis<DominatorTreeWrapperPass>().getDomTree(),
-                  dbgs());
-  }
-  return Changed;
+  return Impl.runImpl(F, TLI, LVI, AA, HasProfileData, std::move(BFI),
+                      std::move(BPI));
 }
 
 PreservedAnalyses JumpThreadingPass::run(Function &F,
@@ -352,15 +230,13 @@ bool JumpThreadingPass::runImpl(Function &F, TargetLibraryInfo *TLI_,
       // Can't thread an unconditional jump, but if the block is "almost
       // empty", we can replace uses of it with uses of the successor and make
       // this dead.
-      // We should not eliminate the loop header or latch either, because
-      // eliminating a loop header or latch might later prevent LoopSimplify
-      // from transforming nested loops into simplified form. We will rely on
-      // later passes in backend to clean up empty blocks.
+      // We should not eliminate the loop header either, because eliminating
+      // a loop header might later prevent LoopSimplify from transforming nested
+      // loops into simplified form.
       if (BI && BI->isUnconditional() &&
           BB != &BB->getParent()->getEntryBlock() &&
           // If the terminator is the only non-phi instruction, try to nuke it.
-          BB->getFirstNonPHIOrDbg()->isTerminator() && !LoopHeaders.count(BB) &&
-          !LoopHeaders.count(BI->getSuccessor(0))) {
+          BB->getFirstNonPHIOrDbg()->isTerminator() && !LoopHeaders.count(BB)) {
         // FIXME: It is always conservatively correct to drop the info
         // for a block even if it doesn't get erased.  This isn't totally
         // awesome, but it allows us to use AssertingVH to prevent nasty
@@ -700,12 +576,7 @@ bool JumpThreadingPass::ComputeValueKnownInPredecessors(
   // Handle compare with phi operand, where the PHI is defined in this block.
   if (CmpInst *Cmp = dyn_cast<CmpInst>(I)) {
     assert(Preference == WantInteger && "Compares only produce integers");
-    Type *CmpType = Cmp->getType();
-    Value *CmpLHS = Cmp->getOperand(0);
-    Value *CmpRHS = Cmp->getOperand(1);
-    CmpInst::Predicate Pred = Cmp->getPredicate();
-
-    PHINode *PN = dyn_cast<PHINode>(CmpLHS);
+    PHINode *PN = dyn_cast<PHINode>(Cmp->getOperand(0));
     if (PN && PN->getParent() == BB) {
       const DataLayout &DL = PN->getModule()->getDataLayout();
       // We can do this simplification if any comparisons fold to true or false.
@@ -713,15 +584,15 @@ bool JumpThreadingPass::ComputeValueKnownInPredecessors(
       for (unsigned i = 0, e = PN->getNumIncomingValues(); i != e; ++i) {
         BasicBlock *PredBB = PN->getIncomingBlock(i);
         Value *LHS = PN->getIncomingValue(i);
-        Value *RHS = CmpRHS->DoPHITranslation(BB, PredBB);
+        Value *RHS = Cmp->getOperand(1)->DoPHITranslation(BB, PredBB);
 
-        Value *Res = SimplifyCmpInst(Pred, LHS, RHS, {DL});
+        Value *Res = SimplifyCmpInst(Cmp->getPredicate(), LHS, RHS, {DL});
         if (!Res) {
           if (!isa<Constant>(RHS))
             continue;
 
           LazyValueInfo::Tristate
-            ResT = LVI->getPredicateOnEdge(Pred, LHS,
+            ResT = LVI->getPredicateOnEdge(Cmp->getPredicate(), LHS,
                                            cast<Constant>(RHS), PredBB, BB,
                                            CxtI ? CxtI : Cmp);
           if (ResT == LazyValueInfo::Unknown)
@@ -738,65 +609,25 @@ bool JumpThreadingPass::ComputeValueKnownInPredecessors(
 
     // If comparing a live-in value against a constant, see if we know the
     // live-in value on any predecessors.
-    if (isa<Constant>(CmpRHS) && !CmpType->isVectorTy()) {
-      Constant *CmpConst = cast<Constant>(CmpRHS);
+    if (isa<Constant>(Cmp->getOperand(1)) && !Cmp->getType()->isVectorTy()) {
+      Constant *CmpConst = cast<Constant>(Cmp->getOperand(1));
 
-      if (!isa<Instruction>(CmpLHS) ||
-          cast<Instruction>(CmpLHS)->getParent() != BB) {
+      if (!isa<Instruction>(Cmp->getOperand(0)) ||
+          cast<Instruction>(Cmp->getOperand(0))->getParent() != BB) {
         for (BasicBlock *P : predecessors(BB)) {
           // If the value is known by LazyValueInfo to be a constant in a
           // predecessor, use that information to try to thread this block.
           LazyValueInfo::Tristate Res =
-            LVI->getPredicateOnEdge(Pred, CmpLHS,
+            LVI->getPredicateOnEdge(Cmp->getPredicate(), Cmp->getOperand(0),
                                     CmpConst, P, BB, CxtI ? CxtI : Cmp);
           if (Res == LazyValueInfo::Unknown)
             continue;
 
-          Constant *ResC = ConstantInt::get(CmpType, Res);
+          Constant *ResC = ConstantInt::get(Cmp->getType(), Res);
           Result.push_back(std::make_pair(ResC, P));
         }
 
         return !Result.empty();
-      }
-
-      // InstCombine can fold some forms of constant range checks into
-      // (icmp (add (x, C1)), C2). See if we have we have such a thing with
-      // x as a live-in.
-      {
-        using namespace PatternMatch;
-        Value *AddLHS;
-        ConstantInt *AddConst;
-        if (isa<ConstantInt>(CmpConst) &&
-            match(CmpLHS, m_Add(m_Value(AddLHS), m_ConstantInt(AddConst)))) {
-          if (!isa<Instruction>(AddLHS) ||
-              cast<Instruction>(AddLHS)->getParent() != BB) {
-            for (BasicBlock *P : predecessors(BB)) {
-              // If the value is known by LazyValueInfo to be a ConstantRange in
-              // a predecessor, use that information to try to thread this
-              // block.
-              ConstantRange CR = LVI->getConstantRangeOnEdge(
-                  AddLHS, P, BB, CxtI ? CxtI : cast<Instruction>(CmpLHS));
-              // Propagate the range through the addition.
-              CR = CR.add(AddConst->getValue());
-
-              // Get the range where the compare returns true.
-              ConstantRange CmpRange = ConstantRange::makeExactICmpRegion(
-                  Pred, cast<ConstantInt>(CmpConst)->getValue());
-
-              Constant *ResC;
-              if (CmpRange.contains(CR))
-                ResC = ConstantInt::getTrue(CmpType);
-              else if (CmpRange.inverse().contains(CR))
-                ResC = ConstantInt::getFalse(CmpType);
-              else
-                continue;
-
-              Result.push_back(std::make_pair(ResC, P));
-            }
-
-            return !Result.empty();
-          }
-        }
       }
 
       // Try to find a constant value for the LHS of a comparison,
@@ -807,7 +638,8 @@ bool JumpThreadingPass::ComputeValueKnownInPredecessors(
 
       for (const auto &LHSVal : LHSVals) {
         Constant *V = LHSVal.first;
-        Constant *Folded = ConstantExpr::getCompare(Pred, V, CmpConst);
+        Constant *Folded = ConstantExpr::getCompare(Cmp->getPredicate(),
+                                                    V, CmpConst);
         if (Constant *KC = getKnownConstant(Folded, WantInteger))
           Result.push_back(std::make_pair(KC, LHSVal.second));
       }
@@ -1100,11 +932,6 @@ bool JumpThreadingPass::ProcessBlock(BasicBlock *BB) {
     if (SimplifyPartiallyRedundantLoad(LI))
       return true;
 
-  // Before threading, try to propagate profile data backwards:
-  if (PHINode *PN = dyn_cast<PHINode>(CondInst))
-    if (PN->getParent() == BB && isa<BranchInst>(BB->getTerminator()))
-      updatePredecessorProfileMetadata(PN, BB);
-
   // Handle a variety of cases where we are branching on something derived from
   // a PHI node in the current block.  If we can prove that any predecessors
   // compute a predictable value based on a PHI node, thread those predecessors.
@@ -1150,9 +977,9 @@ bool JumpThreadingPass::ProcessImpliedCondition(BasicBlock *BB) {
     if (PBI->getSuccessor(0) != CurrentBB && PBI->getSuccessor(1) != CurrentBB)
       return false;
 
-    bool CondIsTrue = PBI->getSuccessor(0) == CurrentBB;
+    bool FalseDest = PBI->getSuccessor(1) == CurrentBB;
     Optional<bool> Implication =
-        isImpliedCondition(PBI->getCondition(), Cond, DL, CondIsTrue);
+      isImpliedCondition(PBI->getCondition(), Cond, DL, FalseDest);
     if (Implication) {
       BI->getSuccessor(*Implication ? 1 : 0)->removePredecessor(BB);
       BranchInst::Create(BI->getSuccessor(*Implication ? 0 : 1), BI);
@@ -1340,7 +1167,7 @@ bool JumpThreadingPass::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
     LoadInst *NewVal = new LoadInst(
         LoadedPtr->DoPHITranslation(LoadBB, UnavailablePred),
         LI->getName() + ".pr", false, LI->getAlignment(), LI->getOrdering(),
-        LI->getSyncScopeID(), UnavailablePred->getTerminator());
+        LI->getSynchScope(), UnavailablePred->getTerminator());
     NewVal->setDebugLoc(LI->getDebugLoc());
     if (AATags)
       NewVal->setAAMetadata(AATags);
@@ -2296,19 +2123,11 @@ bool JumpThreadingPass::TryToUnfoldSelect(CmpInst *CondCmp, BasicBlock *BB) {
   return false;
 }
 
-/// TryToUnfoldSelectInCurrBB - Look for PHI/Select or PHI/CMP/Select in the
-/// same BB in the form
+/// TryToUnfoldSelectInCurrBB - Look for PHI/Select in the same BB of the form
 /// bb:
 ///   %p = phi [false, %bb1], [true, %bb2], [false, %bb3], [true, %bb4], ...
-///   %s = select %p, trueval, falseval
+///   %s = select p, trueval, falseval
 ///
-/// or
-///
-/// bb:
-///   %p = phi [0, %bb1], [1, %bb2], [0, %bb3], [1, %bb4], ...
-///   %c = cmp %p, 0
-///   %s = select %c, trueval, falseval
-//
 /// And expand the select into a branch structure. This later enables
 /// jump-threading over bb in this pass.
 ///
@@ -2322,54 +2141,44 @@ bool JumpThreadingPass::TryToUnfoldSelectInCurrBB(BasicBlock *BB) {
   if (LoopHeaders.count(BB))
     return false;
 
+  // Look for a Phi/Select pair in the same basic block.  The Phi feeds the
+  // condition of the Select and at least one of the incoming values is a
+  // constant.
   for (BasicBlock::iterator BI = BB->begin();
        PHINode *PN = dyn_cast<PHINode>(BI); ++BI) {
-    // Look for a Phi having at least one constant incoming value.
-    if (llvm::all_of(PN->incoming_values(),
-                     [](Value *V) { return !isa<ConstantInt>(V); }))
+    unsigned NumPHIValues = PN->getNumIncomingValues();
+    if (NumPHIValues == 0 || !PN->hasOneUse())
       continue;
 
-    auto isUnfoldCandidate = [BB](SelectInst *SI, Value *V) {
-      // Check if SI is in BB and use V as condition.
-      if (SI->getParent() != BB)
-        return false;
-      Value *Cond = SI->getCondition();
-      return (Cond && Cond == V && Cond->getType()->isIntegerTy(1));
-    };
+    SelectInst *SI = dyn_cast<SelectInst>(PN->user_back());
+    if (!SI || SI->getParent() != BB)
+      continue;
 
-    SelectInst *SI = nullptr;
-    for (Use &U : PN->uses()) {
-      if (ICmpInst *Cmp = dyn_cast<ICmpInst>(U.getUser())) {
-        // Look for a ICmp in BB that compares PN with a constant and is the
-        // condition of a Select.
-        if (Cmp->getParent() == BB && Cmp->hasOneUse() &&
-            isa<ConstantInt>(Cmp->getOperand(1 - U.getOperandNo())))
-          if (SelectInst *SelectI = dyn_cast<SelectInst>(Cmp->user_back()))
-            if (isUnfoldCandidate(SelectI, Cmp->use_begin()->get())) {
-              SI = SelectI;
-              break;
-            }
-      } else if (SelectInst *SelectI = dyn_cast<SelectInst>(U.getUser())) {
-        // Look for a Select in BB that uses PN as condtion.
-        if (isUnfoldCandidate(SelectI, U.get())) {
-          SI = SelectI;
-          break;
-        }
-      }
+    Value *Cond = SI->getCondition();
+    if (!Cond || Cond != PN || !Cond->getType()->isIntegerTy(1))
+      continue;
+
+    bool HasConst = false;
+    for (unsigned i = 0; i != NumPHIValues; ++i) {
+      if (PN->getIncomingBlock(i) == BB)
+        return false;
+      if (isa<ConstantInt>(PN->getIncomingValue(i)))
+        HasConst = true;
     }
 
-    if (!SI)
-      continue;
-    // Expand the select.
-    TerminatorInst *Term =
-        SplitBlockAndInsertIfThen(SI->getCondition(), SI, false);
-    PHINode *NewPN = PHINode::Create(SI->getType(), 2, "", SI);
-    NewPN->addIncoming(SI->getTrueValue(), Term->getParent());
-    NewPN->addIncoming(SI->getFalseValue(), BB);
-    SI->replaceAllUsesWith(NewPN);
-    SI->eraseFromParent();
-    return true;
+    if (HasConst) {
+      // Expand the select.
+      TerminatorInst *Term =
+          SplitBlockAndInsertIfThen(SI->getCondition(), SI, false);
+      PHINode *NewPN = PHINode::Create(SI->getType(), 2, "", SI);
+      NewPN->addIncoming(SI->getTrueValue(), Term->getParent());
+      NewPN->addIncoming(SI->getFalseValue(), BB);
+      SI->replaceAllUsesWith(NewPN);
+      SI->eraseFromParent();
+      return true;
+    }
   }
+  
   return false;
 }
 
@@ -2445,7 +2254,8 @@ bool JumpThreadingPass::ThreadGuard(BasicBlock *BB, IntrinsicInst *Guard,
     TrueDestIsSafe = true;
   else {
     // False dest is safe if !BranchCond => GuardCond.
-    Impl = isImpliedCondition(BranchCond, GuardCond, DL, /* LHSIsTrue */ false);
+    Impl =
+        isImpliedCondition(BranchCond, GuardCond, DL, /* InvertAPred */ true);
     if (Impl && *Impl)
       FalseDestIsSafe = true;
   }

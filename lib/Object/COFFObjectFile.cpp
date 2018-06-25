@@ -52,6 +52,16 @@ static bool checkSize(MemoryBufferRef M, std::error_code &EC, uint64_t Size) {
   return true;
 }
 
+static std::error_code checkOffset(MemoryBufferRef M, uintptr_t Addr,
+                                   const uint64_t Size) {
+  if (Addr + Size < Addr || Addr + Size < Size ||
+      Addr + Size > uintptr_t(M.getBufferEnd()) ||
+      Addr < uintptr_t(M.getBufferStart())) {
+    return object_error::unexpected_eof;
+  }
+  return std::error_code();
+}
+
 // Sets Obj unless any bytes in [addr, addr + size) fall outsize of m.
 // Returns unexpected_eof if error.
 template <typename T>
@@ -59,7 +69,7 @@ static std::error_code getObject(const T *&Obj, MemoryBufferRef M,
                                  const void *Ptr,
                                  const uint64_t Size = sizeof(T)) {
   uintptr_t Addr = uintptr_t(Ptr);
-  if (std::error_code EC = Binary::checkOffset(M, Addr, Size))
+  if (std::error_code EC = checkOffset(M, Addr, Size))
     return EC;
   Obj = reinterpret_cast<const T *>(Addr);
   return std::error_code();
@@ -217,11 +227,8 @@ uint32_t COFFObjectFile::getSymbolFlags(DataRefImpl Ref) const {
   if (Symb.isExternal() || Symb.isWeakExternal())
     Result |= SymbolRef::SF_Global;
 
-  if (Symb.isWeakExternal()) {
+  if (Symb.isWeakExternal())
     Result |= SymbolRef::SF_Weak;
-    // We use indirect to allow the archiver to write weak externs
-    Result |= SymbolRef::SF_Indirect;
-  }
 
   if (Symb.getSectionNumber() == COFF::IMAGE_SYM_ABSOLUTE)
     Result |= SymbolRef::SF_Absolute;
@@ -373,8 +380,7 @@ getFirstReloc(const coff_section *Sec, MemoryBufferRef M, const uint8_t *Base) {
     // relocations.
     begin++;
   }
-  if (Binary::checkOffset(M, uintptr_t(begin),
-                          sizeof(coff_relocation) * NumRelocs))
+  if (checkOffset(M, uintptr_t(begin), sizeof(coff_relocation) * NumRelocs))
     return nullptr;
   return begin;
 }
@@ -877,7 +883,7 @@ base_reloc_iterator COFFObjectFile::base_reloc_end() const {
 }
 
 uint8_t COFFObjectFile::getBytesInAddress() const {
-  return getArch() == Triple::x86_64 || getArch() == Triple::aarch64 ? 8 : 4;
+  return getArch() == Triple::x86_64 ? 8 : 4;
 }
 
 StringRef COFFObjectFile::getFileFormatName() const {
@@ -1206,29 +1212,6 @@ void COFFObjectFile::getRelocationTypeName(
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH20T);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH24T);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BLX23T);
-    default:
-      Res = "Unknown";
-    }
-    break;
-  case COFF::IMAGE_FILE_MACHINE_ARM64:
-    switch (Reloc->Type) {
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ABSOLUTE);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ADDR32);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ADDR32NB);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_BRANCH26);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_PAGEBASE_REL21);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_REL21);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_PAGEOFFSET_12A);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_PAGEOFFSET_12L);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_SECREL);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_SECREL_LOW12A);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_SECREL_HIGH12A);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_SECREL_LOW12L);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_TOKEN);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_SECTION);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_ADDR64);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_BRANCH19);
-    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM64_BRANCH14);
     default:
       Res = "Unknown";
     }

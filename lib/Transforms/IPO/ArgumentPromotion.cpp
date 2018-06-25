@@ -124,10 +124,6 @@ doPromotion(Function *F, SmallPtrSetImpl<Argument *> &ArgsToPromote,
     } else if (I->use_empty()) {
       // Dead argument (which are always marked as promotable)
       ++NumArgumentsDead;
-
-      // There may be remaining metadata uses of the argument for things like
-      // llvm.dbg.value. Replace them with undef.
-      I->replaceAllUsesWith(UndefValue::get(I->getType()));
     } else {
       // Okay, this is being promoted. This means that the only uses are loads
       // or GEPs which are only used by loads
@@ -356,7 +352,7 @@ doPromotion(Function *F, SmallPtrSetImpl<Argument *> &ArgsToPromote,
       // Just add all the struct element types.
       Type *AgTy = cast<PointerType>(I->getType())->getElementType();
       Value *TheAlloca = new AllocaInst(AgTy, DL.getAllocaAddrSpace(), nullptr,
-                                        I->getParamAlignment(), "", InsertPt);
+                                        "", InsertPt);
       StructType *STy = cast<StructType>(AgTy);
       Value *Idxs[2] = {ConstantInt::get(Type::getInt32Ty(F->getContext()), 0),
                         nullptr};

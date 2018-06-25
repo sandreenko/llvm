@@ -12,19 +12,13 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/BinaryStreamArray.h"
 #include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamRef.h"
-#include "llvm/Support/Error.h"
-#include <cstdint>
-#include <vector>
+#include "llvm/Support/Endian.h"
 
 namespace llvm {
-
 namespace codeview {
 
 class DebugStringTableSubsection;
@@ -34,22 +28,24 @@ struct FileChecksumEntry {
   FileChecksumKind Kind;      // The type of checksum.
   ArrayRef<uint8_t> Checksum; // The bytes of the checksum.
 };
+}
+}
 
-} // end namespace codeview
-
+namespace llvm {
 template <> struct VarStreamArrayExtractor<codeview::FileChecksumEntry> {
 public:
-  using ContextType = void;
+  typedef void ContextType;
 
   Error operator()(BinaryStreamRef Stream, uint32_t &Len,
                    codeview::FileChecksumEntry &Item);
 };
+}
 
+namespace llvm {
 namespace codeview {
-
 class DebugChecksumsSubsectionRef final : public DebugSubsectionRef {
-  using FileChecksumArray = VarStreamArray<codeview::FileChecksumEntry>;
-  using Iterator = FileChecksumArray::Iterator;
+  typedef VarStreamArray<codeview::FileChecksumEntry> FileChecksumArray;
+  typedef FileChecksumArray::Iterator Iterator;
 
 public:
   DebugChecksumsSubsectionRef()
@@ -93,12 +89,10 @@ private:
 
   DenseMap<uint32_t, uint32_t> OffsetMap;
   uint32_t SerializedSize = 0;
-  BumpPtrAllocator Storage;
+  llvm::BumpPtrAllocator Storage;
   std::vector<FileChecksumEntry> Checksums;
 };
+}
+}
 
-} // end namespace codeview
-
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGCHECKSUMSSUBSECTION_H
+#endif

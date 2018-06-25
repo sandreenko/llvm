@@ -10,10 +10,12 @@
 #ifndef LLVM_DEBUGINFO_DWARF_DWARFDEBUGRANGELIST_H
 #define LLVM_DEBUGINFO_DWARF_DWARFDEBUGRANGELIST_H
 
-#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include "llvm/DebugInfo/DWARF/DWARFRelocMap.h"
+#include "llvm/Support/DataExtractor.h"
+
 #include <cassert>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace llvm {
@@ -27,7 +29,7 @@ struct DWARFAddressRange {
 };
 
 /// DWARFAddressRangesVector - represents a set of absolute address ranges.
-using DWARFAddressRangesVector = std::vector<DWARFAddressRange>;
+typedef std::vector<DWARFAddressRange> DWARFAddressRangesVector;
 
 class DWARFDebugRangeList {
 public:
@@ -79,7 +81,7 @@ public:
 
   void clear();
   void dump(raw_ostream &OS) const;
-  bool extract(const DWARFDataExtractor &data, uint32_t *offset_ptr);
+  bool extract(DataExtractor data, uint32_t *offset_ptr, const RelocAddrMap& Relocs);
   const std::vector<RangeListEntry> &getEntries() { return Entries; }
 
   /// getAbsoluteRanges - Returns absolute address ranges defined by this range

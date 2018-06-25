@@ -4,9 +4,7 @@
 
 // CHECK:  .amdgpu_code_object_metadata
 // CHECK:    Version: [ 1, 0 ]
-// CHECK:    Printf:
-// CHECK:      - '1:1:4:%d\n'
-// CHECK:      - '2:1:8:%g\n'
+// CHECK:    Printf: [ '1:1:4:%d\n', '2:1:8:%g\n' ]
 // CHECK:    Kernels:
 // CHECK:      - Name:            test_kernel
 // CHECK:        Language:        OpenCL C

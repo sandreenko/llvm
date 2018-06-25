@@ -232,7 +232,7 @@ bool InferAddressSpaces::rewriteIntrinsicOperands(IntrinsicInst *II,
   case Intrinsic::amdgcn_atomic_inc:
   case Intrinsic::amdgcn_atomic_dec:{
     const ConstantInt *IsVolatile = dyn_cast<ConstantInt>(II->getArgOperand(4));
-    if (!IsVolatile || !IsVolatile->isZero())
+    if (!IsVolatile || !IsVolatile->isNullValue())
       return false;
 
     LLVM_FALLTHROUGH;
@@ -358,8 +358,7 @@ InferAddressSpaces::collectFlatAddressExpressions(Function &F) const {
     // If the operands of the expression on the top are already explored,
     // adds that expression to the resultant postorder.
     if (PostorderStack.back().second) {
-      if (TopVal->getType()->getPointerAddressSpace() == FlatAddrSpace)
-        Postorder.push_back(TopVal);
+      Postorder.push_back(TopVal);
       PostorderStack.pop_back();
       continue;
     }

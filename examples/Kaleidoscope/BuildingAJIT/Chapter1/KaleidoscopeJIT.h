@@ -40,15 +40,14 @@ class KaleidoscopeJIT {
 private:
   std::unique_ptr<TargetMachine> TM;
   const DataLayout DL;
-  RTDyldObjectLinkingLayer ObjectLayer;
-  IRCompileLayer<decltype(ObjectLayer), SimpleCompiler> CompileLayer;
+  RTDyldObjectLinkingLayer<> ObjectLayer;
+  IRCompileLayer<decltype(ObjectLayer)> CompileLayer;
 
 public:
-  using ModuleHandle = decltype(CompileLayer)::ModuleHandleT;
+  using ModuleHandle = decltype(CompileLayer)::ModuleSetHandleT;
 
   KaleidoscopeJIT()
       : TM(EngineBuilder().selectTarget()), DL(TM->createDataLayout()),
-        ObjectLayer([]() { return std::make_shared<SectionMemoryManager>(); }),
         CompileLayer(ObjectLayer, SimpleCompiler(*TM)) {
     llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
   }
@@ -73,10 +72,15 @@ public:
           return JITSymbol(nullptr);
         });
 
+    // Build a singleton module set to hold our module.
+    std::vector<std::unique_ptr<Module>> Ms;
+    Ms.push_back(std::move(M));
+
     // Add the set to the JIT with the resolver we created above and a newly
     // created SectionMemoryManager.
-    return cantFail(CompileLayer.addModule(std::move(M),
-                                           std::move(Resolver)));
+    return CompileLayer.addModuleSet(std::move(Ms),
+                                     make_unique<SectionMemoryManager>(),
+                                     std::move(Resolver));
   }
 
   JITSymbol findSymbol(const std::string Name) {
@@ -86,12 +90,8 @@ public:
     return CompileLayer.findSymbol(MangledNameStream.str(), true);
   }
 
-  JITTargetAddress getSymbolAddress(const std::string Name) {
-    return cantFail(findSymbol(Name).getAddress());
-  }
-
   void removeModule(ModuleHandle H) {
-    cantFail(CompileLayer.removeModule(H));
+    CompileLayer.removeModuleSet(H);
   }
 };
 

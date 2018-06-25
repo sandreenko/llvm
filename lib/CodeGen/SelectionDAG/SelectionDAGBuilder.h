@@ -38,6 +38,7 @@ class BranchInst;
 class CallInst;
 class DbgValueInst;
 class ExtractElementInst;
+class ExtractValueInst;
 class FCmpInst;
 class FPExtInst;
 class FPToSIInst;
@@ -52,6 +53,7 @@ class IntToPtrInst;
 class IndirectBrInst;
 class InvokeInst;
 class InsertElementInst;
+class InsertValueInst;
 class Instruction;
 class LoadInst;
 class MachineBasicBlock;
@@ -217,12 +219,11 @@ private:
     CaseBlock(ISD::CondCode cc, const Value *cmplhs, const Value *cmprhs,
               const Value *cmpmiddle, MachineBasicBlock *truebb,
               MachineBasicBlock *falsebb, MachineBasicBlock *me,
-              SDLoc dl,
               BranchProbability trueprob = BranchProbability::getUnknown(),
               BranchProbability falseprob = BranchProbability::getUnknown())
         : CC(cc), CmpLHS(cmplhs), CmpMHS(cmpmiddle), CmpRHS(cmprhs),
-          TrueBB(truebb), FalseBB(falsebb), ThisBB(me), DL(dl),
-          TrueProb(trueprob), FalseProb(falseprob) {}
+          TrueBB(truebb), FalseBB(falsebb), ThisBB(me), TrueProb(trueprob),
+          FalseProb(falseprob) {}
 
     // CC - the condition code to use for the case block's setcc node
     ISD::CondCode CC;
@@ -237,10 +238,6 @@ private:
 
     // ThisBB - the block into which to emit the code for the setcc and branches
     MachineBasicBlock *ThisBB;
-
-    /// The debug location of the instruction this CaseBlock was
-    /// produced from.
-    SDLoc DL;
 
     // TrueProb/FalseProb - branch weights.
     BranchProbability TrueProb, FalseProb;
@@ -862,8 +859,8 @@ private:
   void visitInsertElement(const User &I);
   void visitShuffleVector(const User &I);
 
-  void visitExtractValue(const User &I);
-  void visitInsertValue(const User &I);
+  void visitExtractValue(const ExtractValueInst &I);
+  void visitInsertValue(const InsertValueInst &I);
   void visitLandingPad(const LandingPadInst &I);
 
   void visitGetElementPtr(const User &I);
@@ -928,12 +925,13 @@ private:
 
   void emitInlineAsmError(ImmutableCallSite CS, const Twine &Message);
 
-  /// If V is an function argument then create corresponding DBG_VALUE machine
-  /// instruction for it now. At the end of instruction selection, they will be
-  /// inserted to the entry BB.
+  /// EmitFuncArgumentDbgValue - If V is an function argument then create
+  /// corresponding DBG_VALUE machine instruction for it now. At the end of
+  /// instruction selection, they will be inserted to the entry BB.
   bool EmitFuncArgumentDbgValue(const Value *V, DILocalVariable *Variable,
                                 DIExpression *Expr, DILocation *DL,
-                                bool IsDbgDeclare, const SDValue &N);
+                                int64_t Offset, bool IsDbgDeclare,
+                                const SDValue &N);
 
   /// Return the next block after MBB, or nullptr if there is none.
   MachineBasicBlock *NextBlock(MachineBasicBlock *MBB);
@@ -944,8 +942,8 @@ private:
 
   /// Return the appropriate SDDbgValue based on N.
   SDDbgValue *getDbgValue(SDValue N, DILocalVariable *Variable,
-                          DIExpression *Expr, const DebugLoc &dl,
-                          unsigned DbgSDNodeOrder);
+                          DIExpression *Expr, int64_t Offset,
+                          const DebugLoc &dl, unsigned DbgSDNodeOrder);
 };
 
 /// RegsForValue - This struct represents the registers (physical or virtual)

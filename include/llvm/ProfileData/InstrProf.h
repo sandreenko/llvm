@@ -249,8 +249,9 @@ void annotateValueSite(Module &M, Instruction &Inst,
 
 /// Same as the above interface but using an ArrayRef, as well as \p Sum.
 void annotateValueSite(Module &M, Instruction &Inst,
-                       ArrayRef<InstrProfValueData> VDs, uint64_t Sum,
-                       InstrProfValueKind ValueKind, uint32_t MaxMDCount);
+                       ArrayRef<InstrProfValueData> VDs,
+                       uint64_t Sum, InstrProfValueKind ValueKind,
+                       uint32_t MaxMDCount);
 
 /// Extract the value profile data from \p Inst which is annotated with
 /// value profile meta data. Return false if there is no value data annotated,
@@ -295,8 +296,7 @@ enum class instrprof_error {
   value_site_count_mismatch,
   compress_failed,
   uncompress_failed,
-  empty_raw_profile,
-  zlib_unavailable
+  empty_raw_profile
 };
 
 inline std::error_code make_error_code(instrprof_error E) {
@@ -582,43 +582,29 @@ struct InstrProfValueSiteRecord {
 
   /// Merge data from another InstrProfValueSiteRecord
   /// Optionally scale merged counts by \p Weight.
-  void merge(InstrProfValueSiteRecord &Input, uint64_t Weight,
-             function_ref<void(instrprof_error)> Warn);
+  void merge(SoftInstrProfErrors &SIPE, InstrProfValueSiteRecord &Input,
+             uint64_t Weight = 1);
   /// Scale up value profile data counts.
-  void scale(uint64_t Weight, function_ref<void(instrprof_error)> Warn);
+  void scale(SoftInstrProfErrors &SIPE, uint64_t Weight);
 };
 
 /// Profiling information for a single function.
 struct InstrProfRecord {
+  StringRef Name;
+  uint64_t Hash;
   std::vector<uint64_t> Counts;
+  SoftInstrProfErrors SIPE;
 
   InstrProfRecord() = default;
-  InstrProfRecord(std::vector<uint64_t> Counts) : Counts(std::move(Counts)) {}
-  InstrProfRecord(InstrProfRecord &&) = default;
-  InstrProfRecord(const InstrProfRecord &RHS)
-      : Counts(RHS.Counts),
-        ValueData(RHS.ValueData
-                      ? llvm::make_unique<ValueProfData>(*RHS.ValueData)
-                      : nullptr) {}
-  InstrProfRecord &operator=(InstrProfRecord &&) = default;
-  InstrProfRecord &operator=(const InstrProfRecord &RHS) {
-    Counts = RHS.Counts;
-    if (!RHS.ValueData) {
-      ValueData = nullptr;
-      return *this;
-    }
-    if (!ValueData)
-      ValueData = llvm::make_unique<ValueProfData>(*RHS.ValueData);
-    else
-      *ValueData = *RHS.ValueData;
-    return *this;
-  }
+  InstrProfRecord(StringRef Name, uint64_t Hash, std::vector<uint64_t> Counts)
+      : Name(Name), Hash(Hash), Counts(std::move(Counts)) {}
 
   using ValueMapType = std::vector<std::pair<uint64_t, uint64_t>>;
 
   /// Return the number of value profile kinds with non-zero number
   /// of profile sites.
   inline uint32_t getNumValueKinds() const;
+
   /// Return the number of instrumented sites for ValueKind.
   inline uint32_t getNumValueSites(uint32_t ValueKind) const;
 
@@ -653,18 +639,20 @@ struct InstrProfRecord {
 
   /// Merge the counts in \p Other into this one.
   /// Optionally scale merged counts by \p Weight.
-  void merge(InstrProfRecord &Other, uint64_t Weight,
-             function_ref<void(instrprof_error)> Warn);
+  void merge(InstrProfRecord &Other, uint64_t Weight = 1);
 
   /// Scale up profile counts (including value profile data) by
   /// \p Weight.
-  void scale(uint64_t Weight, function_ref<void(instrprof_error)> Warn);
+  void scale(uint64_t Weight);
 
   /// Sort value profile data (per site) by count.
   void sortValueData() {
-    for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind)
-      for (auto &SR : getValueSitesForKind(Kind))
+    for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind) {
+      std::vector<InstrProfValueSiteRecord> &SiteRecords =
+          getValueSitesForKind(Kind);
+      for (auto &SR : SiteRecords)
         SR.sortByCount();
+    }
   }
 
   /// Clear value data entries and edge counters.
@@ -674,51 +662,36 @@ struct InstrProfRecord {
   }
 
   /// Clear value data entries
-  void clearValueData() { ValueData = nullptr; }
+  void clearValueData() {
+    for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind)
+      getValueSitesForKind(Kind).clear();
+  }
+
+  /// Get the error contained within the record's soft error counter.
+  Error takeError() { return SIPE.takeError(); }
 
 private:
-  struct ValueProfData {
-    std::vector<InstrProfValueSiteRecord> IndirectCallSites;
-    std::vector<InstrProfValueSiteRecord> MemOPSizes;
-  };
-  std::unique_ptr<ValueProfData> ValueData;
+  std::vector<InstrProfValueSiteRecord> IndirectCallSites;
+  std::vector<InstrProfValueSiteRecord> MemOPSizes;
 
-  MutableArrayRef<InstrProfValueSiteRecord>
-  getValueSitesForKind(uint32_t ValueKind) {
-    // Cast to /add/ const (should be an implicit_cast, ideally, if that's ever
-    // implemented in LLVM) to call the const overload of this function, then
-    // cast away the constness from the result.
-    auto AR = const_cast<const InstrProfRecord *>(this)->getValueSitesForKind(
-        ValueKind);
-    return makeMutableArrayRef(
-        const_cast<InstrProfValueSiteRecord *>(AR.data()), AR.size());
-  }
-  ArrayRef<InstrProfValueSiteRecord>
+  const std::vector<InstrProfValueSiteRecord> &
   getValueSitesForKind(uint32_t ValueKind) const {
-    if (!ValueData)
-      return None;
     switch (ValueKind) {
     case IPVK_IndirectCallTarget:
-      return ValueData->IndirectCallSites;
+      return IndirectCallSites;
     case IPVK_MemOPSize:
-      return ValueData->MemOPSizes;
+      return MemOPSizes;
     default:
       llvm_unreachable("Unknown value kind!");
     }
+    return IndirectCallSites;
   }
 
   std::vector<InstrProfValueSiteRecord> &
-  getOrCreateValueSitesForKind(uint32_t ValueKind) {
-    if (!ValueData)
-      ValueData = llvm::make_unique<ValueProfData>();
-    switch (ValueKind) {
-    case IPVK_IndirectCallTarget:
-      return ValueData->IndirectCallSites;
-    case IPVK_MemOPSize:
-      return ValueData->MemOPSizes;
-    default:
-      llvm_unreachable("Unknown value kind!");
-    }
+  getValueSitesForKind(uint32_t ValueKind) {
+    return const_cast<std::vector<InstrProfValueSiteRecord> &>(
+        const_cast<const InstrProfRecord *>(this)
+            ->getValueSitesForKind(ValueKind));
   }
 
   // Map indirect call target name hash to name string.
@@ -727,23 +700,11 @@ private:
 
   // Merge Value Profile data from Src record to this record for ValueKind.
   // Scale merged value counts by \p Weight.
-  void mergeValueProfData(uint32_t ValkeKind, InstrProfRecord &Src,
-                          uint64_t Weight,
-                          function_ref<void(instrprof_error)> Warn);
+  void mergeValueProfData(uint32_t ValueKind, InstrProfRecord &Src,
+                          uint64_t Weight);
 
   // Scale up value profile data count.
-  void scaleValueProfData(uint32_t ValueKind, uint64_t Weight,
-                          function_ref<void(instrprof_error)> Warn);
-};
-
-struct NamedInstrProfRecord : InstrProfRecord {
-  StringRef Name;
-  uint64_t Hash;
-
-  NamedInstrProfRecord() = default;
-  NamedInstrProfRecord(StringRef Name, uint64_t Hash,
-                       std::vector<uint64_t> Counts)
-      : InstrProfRecord(std::move(Counts)), Name(Name), Hash(Hash) {}
+  void scaleValueProfData(uint32_t ValueKind, uint64_t Weight);
 };
 
 uint32_t InstrProfRecord::getNumValueKinds() const {
@@ -755,8 +716,11 @@ uint32_t InstrProfRecord::getNumValueKinds() const {
 
 uint32_t InstrProfRecord::getNumValueData(uint32_t ValueKind) const {
   uint32_t N = 0;
-  for (auto &SR : getValueSitesForKind(ValueKind))
+  const std::vector<InstrProfValueSiteRecord> &SiteRecords =
+      getValueSitesForKind(ValueKind);
+  for (auto &SR : SiteRecords) {
     N += SR.ValueData.size();
+  }
   return N;
 }
 
@@ -801,9 +765,9 @@ uint64_t InstrProfRecord::getValueForSite(InstrProfValueData Dest[],
 }
 
 void InstrProfRecord::reserveSites(uint32_t ValueKind, uint32_t NumValueSites) {
-  if (!NumValueSites)
-    return;
-  getOrCreateValueSitesForKind(ValueKind).reserve(NumValueSites);
+  std::vector<InstrProfValueSiteRecord> &ValueSites =
+      getValueSitesForKind(ValueKind);
+  ValueSites.reserve(NumValueSites);
 }
 
 inline support::endianness getHostEndianness() {

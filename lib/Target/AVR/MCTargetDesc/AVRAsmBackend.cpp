@@ -230,24 +230,12 @@ void ms8(unsigned Size, const MCFixup &Fixup, uint64_t &Value,
 namespace llvm {
 
 // Prepare value for the target space for it
-void AVRAsmBackend::adjustFixupValue(const MCFixup &Fixup,
-                                     const MCValue &Target,
-                                     uint64_t &Value,
+void AVRAsmBackend::adjustFixupValue(const MCFixup &Fixup, uint64_t &Value,
                                      MCContext *Ctx) const {
   // The size of the fixup in bits.
   uint64_t Size = AVRAsmBackend::getFixupKindInfo(Fixup.getKind()).TargetSize;
 
   unsigned Kind = Fixup.getKind();
-
-  // Parsed LLVM-generated temporary labels are already
-  // adjusted for instruction size, but normal labels aren't.
-  //
-  // To handle both cases, we simply un-adjust the temporary label
-  // case so it acts like all other labels.
-  if (const MCSymbolRefExpr *A = Target.getSymA()) {
-    if (A->getSymbol().isTemporary())
-      Value += 2;
-  }
 
   switch (Kind) {
   default:
@@ -345,10 +333,9 @@ MCObjectWriter *AVRAsmBackend::createObjectWriter(raw_pwrite_stream &OS) const {
                                   MCELFObjectTargetWriter::getOSABI(OSType));
 }
 
-void AVRAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                               const MCValue &Target, MutableArrayRef<char> Data,
-                               uint64_t Value, bool IsPCRel) const {
-  adjustFixupValue(Fixup, Target, Value, &Asm.getContext());
+void AVRAsmBackend::applyFixup(const MCFixup &Fixup, char *Data,
+                               unsigned DataSize, uint64_t Value,
+                               bool IsPCRel, MCContext &Ctx) const {
   if (Value == 0)
     return; // Doesn't change encoding.
 
@@ -362,7 +349,7 @@ void AVRAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
   Value <<= Info.TargetOffset;
 
   unsigned Offset = Fixup.getOffset();
-  assert(Offset + NumBytes <= Data.size() && "Invalid fixup offset!");
+  assert(Offset + NumBytes <= DataSize && "Invalid fixup offset!");
 
   // For each byte of the fragment that the fixup touches, mask in the
   // bits from the fixup value.
@@ -449,16 +436,30 @@ bool AVRAsmBackend::writeNopData(uint64_t Count, MCObjectWriter *OW) const {
   return true;
 }
 
-bool AVRAsmBackend::shouldForceRelocation(const MCAssembler &Asm,
-                                          const MCFixup &Fixup,
-                                          const MCValue &Target) {
+void AVRAsmBackend::processFixupValue(const MCAssembler &Asm,
+                                      const MCAsmLayout &Layout,
+                                      const MCFixup &Fixup,
+                                      const MCFragment *DF,
+                                      const MCValue &Target, uint64_t &Value,
+                                      bool &IsResolved) {
   switch ((unsigned) Fixup.getKind()) {
-  default: return false;
   // Fixups which should always be recorded as relocations.
   case AVR::fixup_7_pcrel:
   case AVR::fixup_13_pcrel:
   case AVR::fixup_call:
-    return true;
+    IsResolved = false;
+    break;
+  default:
+    // Parsed LLVM-generated temporary labels are already
+    // adjusted for instruction size, but normal labels aren't.
+    //
+    // To handle both cases, we simply un-adjust the temporary label
+    // case so it acts like all other labels.
+    if (Target.getSymA()->getSymbol().isTemporary())
+      Value += 2;
+
+    adjustFixupValue(Fixup, Value, &Asm.getContext());
+    break;
   }
 }
 

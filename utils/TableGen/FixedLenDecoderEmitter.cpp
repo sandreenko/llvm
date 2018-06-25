@@ -1691,7 +1691,9 @@ void FilterChooser::emitTableEntries(DecoderTableInfo &TableInfo) const {
   dumpStack(errs(), "\t\t");
 
   for (unsigned i = 0; i < Opcodes.size(); ++i) {
-    errs() << '\t' << nameWithID(Opcodes[i]) << " ";
+    const std::string &Name = nameWithID(Opcodes[i]);
+
+    errs() << '\t' << Name << " ";
     dumpBits(errs(),
              getBitsField(*AllInstructions[Opcodes[i]]->TheDef, "Inst"));
     errs() << '\n';

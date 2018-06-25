@@ -21,6 +21,7 @@
 #include "ThumbRegisterInfo.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -37,7 +38,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
-#include <bitset>
 #include <cassert>
 #include <iterator>
 #include <vector>
@@ -236,7 +236,7 @@ void Thumb1FrameLowering::emitPrologue(MachineFunction &MF,
     case ARM::R12:
       if (STI.splitFramePushPop(MF))
         break;
-      LLVM_FALLTHROUGH;
+      // fallthough
     case ARM::R0:
     case ARM::R1:
     case ARM::R2:
@@ -643,15 +643,15 @@ bool Thumb1FrameLowering::emitPopSpecialFixUp(MachineBasicBlock &MBB,
   return true;
 }
 
-typedef std::bitset<ARM::NUM_TARGET_REGS> ARMRegSet;
-
 // Return the first iteraror after CurrentReg which is present in EnabledRegs,
 // or OrderEnd if no further registers are in that set. This does not advance
 // the iterator fiorst, so returns CurrentReg if it is in EnabledRegs.
-static const unsigned *findNextOrderedReg(const unsigned *CurrentReg,
-                                          const ARMRegSet &EnabledRegs,
-                                          const unsigned *OrderEnd) {
-  while (CurrentReg != OrderEnd && !EnabledRegs[*CurrentReg])
+template <unsigned SetSize>
+static const unsigned *
+findNextOrderedReg(const unsigned *CurrentReg,
+                   SmallSet<unsigned, SetSize> &EnabledRegs,
+                   const unsigned *OrderEnd) {
+  while (CurrentReg != OrderEnd && !EnabledRegs.count(*CurrentReg))
     ++CurrentReg;
   return CurrentReg;
 }
@@ -670,18 +670,18 @@ spillCalleeSavedRegisters(MachineBasicBlock &MBB,
   const ARMBaseRegisterInfo *RegInfo = static_cast<const ARMBaseRegisterInfo *>(
       MF.getSubtarget().getRegisterInfo());
 
-  ARMRegSet LoRegsToSave; // r0-r7, lr
-  ARMRegSet HiRegsToSave; // r8-r11
-  ARMRegSet CopyRegs;     // Registers which can be used after pushing
-                          // LoRegs for saving HiRegs.
+  SmallSet<unsigned, 9> LoRegsToSave; // r0-r7, lr
+  SmallSet<unsigned, 4> HiRegsToSave; // r8-r11
+  SmallSet<unsigned, 9> CopyRegs; // Registers which can be used after pushing
+                           // LoRegs for saving HiRegs.
 
   for (unsigned i = CSI.size(); i != 0; --i) {
     unsigned Reg = CSI[i-1].getReg();
 
     if (ARM::tGPRRegClass.contains(Reg) || Reg == ARM::LR) {
-      LoRegsToSave[Reg] = true;
+      LoRegsToSave.insert(Reg);
     } else if (ARM::hGPRRegClass.contains(Reg) && Reg != ARM::LR) {
-      HiRegsToSave[Reg] = true;
+      HiRegsToSave.insert(Reg);
     } else {
       llvm_unreachable("callee-saved register of unexpected class");
     }
@@ -689,21 +689,21 @@ spillCalleeSavedRegisters(MachineBasicBlock &MBB,
     if ((ARM::tGPRRegClass.contains(Reg) || Reg == ARM::LR) &&
         !MF.getRegInfo().isLiveIn(Reg) &&
         !(hasFP(MF) && Reg == RegInfo->getFrameRegister(MF)))
-      CopyRegs[Reg] = true;
+      CopyRegs.insert(Reg);
   }
 
   // Unused argument registers can be used for the high register saving.
   for (unsigned ArgReg : {ARM::R0, ARM::R1, ARM::R2, ARM::R3})
     if (!MF.getRegInfo().isLiveIn(ArgReg))
-      CopyRegs[ArgReg] = true;
+      CopyRegs.insert(ArgReg);
 
   // Push the low registers and lr
   const MachineRegisterInfo &MRI = MF.getRegInfo();
-  if (!LoRegsToSave.none()) {
+  if (!LoRegsToSave.empty()) {
     MachineInstrBuilder MIB =
         BuildMI(MBB, MI, DL, TII.get(ARM::tPUSH)).add(predOps(ARMCC::AL));
     for (unsigned Reg : {ARM::R4, ARM::R5, ARM::R6, ARM::R7, ARM::LR}) {
-      if (LoRegsToSave[Reg]) {
+      if (LoRegsToSave.count(Reg)) {
         bool isKill = !MRI.isLiveIn(Reg);
         if (isKill && !MRI.isReserved(Reg))
           MBB.addLiveIn(Reg);
@@ -746,7 +746,7 @@ spillCalleeSavedRegisters(MachineBasicBlock &MBB,
 
     SmallVector<unsigned, 4> RegsToPush;
     while (HiRegToSave != AllHighRegsEnd && CopyReg != AllCopyRegsEnd) {
-      if (HiRegsToSave[*HiRegToSave]) {
+      if (HiRegsToSave.count(*HiRegToSave)) {
         bool isKill = !MRI.isLiveIn(*HiRegToSave);
         if (isKill && !MRI.isReserved(*HiRegToSave))
           MBB.addLiveIn(*HiRegToSave);
@@ -780,7 +780,7 @@ spillCalleeSavedRegisters(MachineBasicBlock &MBB,
 bool Thumb1FrameLowering::
 restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
                             MachineBasicBlock::iterator MI,
-                            std::vector<CalleeSavedInfo> &CSI,
+                            const std::vector<CalleeSavedInfo> &CSI,
                             const TargetRegisterInfo *TRI) const {
   if (CSI.empty())
     return false;
@@ -794,18 +794,18 @@ restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
   bool isVarArg = AFI->getArgRegsSaveSize() > 0;
   DebugLoc DL = MI != MBB.end() ? MI->getDebugLoc() : DebugLoc();
 
-  ARMRegSet LoRegsToRestore;
-  ARMRegSet HiRegsToRestore;
+  SmallSet<unsigned, 9> LoRegsToRestore;
+  SmallSet<unsigned, 4> HiRegsToRestore;
   // Low registers (r0-r7) which can be used to restore the high registers.
-  ARMRegSet CopyRegs;
+  SmallSet<unsigned, 9> CopyRegs;
 
   for (CalleeSavedInfo I : CSI) {
     unsigned Reg = I.getReg();
 
     if (ARM::tGPRRegClass.contains(Reg) || Reg == ARM::LR) {
-      LoRegsToRestore[Reg] = true;
+      LoRegsToRestore.insert(Reg);
     } else if (ARM::hGPRRegClass.contains(Reg) && Reg != ARM::LR) {
-      HiRegsToRestore[Reg] = true;
+      HiRegsToRestore.insert(Reg);
     } else {
       llvm_unreachable("callee-saved register of unexpected class");
     }
@@ -814,20 +814,20 @@ restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
     // use it for restoring the high registers.
     if ((ARM::tGPRRegClass.contains(Reg)) &&
         !(hasFP(MF) && Reg == RegInfo->getFrameRegister(MF)))
-      CopyRegs[Reg] = true;
+      CopyRegs.insert(Reg);
   }
 
   // If this is a return block, we may be able to use some unused return value
   // registers for restoring the high regs.
   auto Terminator = MBB.getFirstTerminator();
   if (Terminator != MBB.end() && Terminator->getOpcode() == ARM::tBX_RET) {
-    CopyRegs[ARM::R0] = true;
-    CopyRegs[ARM::R1] = true;
-    CopyRegs[ARM::R2] = true;
-    CopyRegs[ARM::R3] = true;
+    CopyRegs.insert(ARM::R0);
+    CopyRegs.insert(ARM::R1);
+    CopyRegs.insert(ARM::R2);
+    CopyRegs.insert(ARM::R3);
     for (auto Op : Terminator->implicit_operands()) {
       if (Op.isReg())
-        CopyRegs[Op.getReg()] = false;
+        CopyRegs.erase(Op.getReg());
     }
   }
 
@@ -843,7 +843,7 @@ restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
                                            HiRegsToRestore, AllHighRegsEnd);
 
   while (HiRegToRestore != AllHighRegsEnd) {
-    assert(!CopyRegs.none());
+    assert(!CopyRegs.empty());
     // Find the first low register to use.
     auto CopyReg =
         findNextOrderedReg(std::begin(AllCopyRegs), CopyRegs, AllCopyRegsEnd);

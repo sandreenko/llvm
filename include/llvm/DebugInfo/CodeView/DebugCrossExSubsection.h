@@ -10,21 +10,18 @@
 #ifndef LLVM_DEBUGINFO_CODEVIEW_DEBUGCROSSEXSUBSECTION_H
 #define LLVM_DEBUGINFO_CODEVIEW_DEBUGCROSSEXSUBSECTION_H
 
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/Support/BinaryStreamArray.h"
 #include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamRef.h"
-#include "llvm/Support/Error.h"
-#include <cstdint>
+#include "llvm/Support/Endian.h"
+
 #include <map>
 
 namespace llvm {
 namespace codeview {
-
 class DebugCrossModuleExportsSubsectionRef final : public DebugSubsectionRef {
-  using ReferenceArray = FixedStreamArray<CrossModuleExport>;
-  using Iterator = ReferenceArray::Iterator;
+  typedef FixedStreamArray<CrossModuleExport> ReferenceArray;
+  typedef ReferenceArray::Iterator Iterator;
 
 public:
   DebugCrossModuleExportsSubsectionRef()
@@ -61,8 +58,7 @@ public:
 private:
   std::map<uint32_t, uint32_t> Mappings;
 };
+}
+}
 
-} // end namespace codeview
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGCROSSEXSUBSECTION_H
+#endif

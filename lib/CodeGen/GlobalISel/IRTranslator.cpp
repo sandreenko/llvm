@@ -1,4 +1,4 @@
-//===- llvm/CodeGen/GlobalISel/IRTranslator.cpp - IRTranslator ---*- C++ -*-==//
+//===-- llvm/CodeGen/GlobalISel/IRTranslator.cpp - IRTranslator --*- C++ -*-==//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,69 +11,34 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/GlobalISel/IRTranslator.h"
-#include "llvm/ADT/STLExtras.h"
+
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/OptimizationDiagnosticInfo.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/GlobalISel/CallLowering.h"
-#include "llvm/CodeGen/LowLevelType.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineMemOperand.h"
-#include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
-#include "llvm/IR/InlineAsm.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Intrinsics.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
-#include "llvm/MC/MCContext.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/CodeGen.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/LowLevelTypeImpl.h"
-#include "llvm/Support/MathExtras.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <iterator>
-#include <string>
-#include <utility>
-#include <vector>
 
 #define DEBUG_TYPE "irtranslator"
 
 using namespace llvm;
 
 char IRTranslator::ID = 0;
-
 INITIALIZE_PASS_BEGIN(IRTranslator, DEBUG_TYPE, "IRTranslator LLVM IR -> MI",
                 false, false)
 INITIALIZE_PASS_DEPENDENCY(TargetPassConfig)
@@ -97,7 +62,7 @@ static void reportTranslationError(MachineFunction &MF,
     ORE.emit(R);
 }
 
-IRTranslator::IRTranslator() : MachineFunctionPass(ID) {
+IRTranslator::IRTranslator() : MachineFunctionPass(ID), MRI(nullptr) {
   initializeIRTranslatorPass(*PassRegistry::getPassRegistry());
 }
 
@@ -105,6 +70,7 @@ void IRTranslator::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<TargetPassConfig>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
+
 
 unsigned IRTranslator::getOrCreateVReg(const Value &Val) {
   unsigned &ValReg = ValToVReg[&Val];
@@ -345,7 +311,7 @@ bool IRTranslator::translateLoad(const User &U, MachineIRBuilder &MIRBuilder) {
       *MF->getMachineMemOperand(MachinePointerInfo(LI.getPointerOperand()),
                                 Flags, DL->getTypeStoreSize(LI.getType()),
                                 getMemOpAlignment(LI), AAMDNodes(), nullptr,
-                                LI.getSyncScopeID(), LI.getOrdering()));
+                                LI.getSynchScope(), LI.getOrdering()));
   return true;
 }
 
@@ -363,7 +329,7 @@ bool IRTranslator::translateStore(const User &U, MachineIRBuilder &MIRBuilder) {
       *MF->getMachineMemOperand(
           MachinePointerInfo(SI.getPointerOperand()), Flags,
           DL->getTypeStoreSize(SI.getValueOperand()->getType()),
-          getMemOpAlignment(SI), AAMDNodes(), nullptr, SI.getSyncScopeID(),
+          getMemOpAlignment(SI), AAMDNodes(), nullptr, SI.getSynchScope(),
           SI.getOrdering()));
   return true;
 }
@@ -616,7 +582,7 @@ bool IRTranslator::translateOverflowIntrinsic(const CallInst &CI, unsigned Op,
     MIB.addUse(Zero);
   }
 
-  MIRBuilder.buildSequence(getOrCreateVReg(CI), {Res, Overflow}, {0, Width});
+  MIRBuilder.buildSequence(getOrCreateVReg(CI), Res, 0, Overflow, Width);
   return true;
 }
 
@@ -682,16 +648,23 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
     if (!V) {
       // Currently the optimizer can produce this; insert an undef to
       // help debugging.  Probably the optimizer should not do this.
-      MIRBuilder.buildIndirectDbgValue(0, DI.getVariable(), DI.getExpression());
+      MIRBuilder.buildIndirectDbgValue(0, DI.getOffset(), DI.getVariable(),
+                                       DI.getExpression());
     } else if (const auto *CI = dyn_cast<Constant>(V)) {
-      MIRBuilder.buildConstDbgValue(*CI, DI.getVariable(), DI.getExpression());
+      MIRBuilder.buildConstDbgValue(*CI, DI.getOffset(), DI.getVariable(),
+                                    DI.getExpression());
     } else {
       unsigned Reg = getOrCreateVReg(*V);
       // FIXME: This does not handle register-indirect values at offset 0. The
       // direct/indirect thing shouldn't really be handled by something as
       // implicit as reg+noreg vs reg+imm in the first palce, but it seems
       // pretty baked in right now.
-      MIRBuilder.buildDirectDbgValue(Reg, DI.getVariable(), DI.getExpression());
+      if (DI.getOffset() != 0)
+        MIRBuilder.buildIndirectDbgValue(Reg, DI.getOffset(), DI.getVariable(),
+                                         DI.getExpression());
+      else
+        MIRBuilder.buildDirectDbgValue(Reg, DI.getVariable(),
+                                       DI.getExpression());
     }
     return true;
   }
@@ -712,26 +685,6 @@ bool IRTranslator::translateKnownIntrinsic(const CallInst &CI, Intrinsic::ID ID,
         .addDef(getOrCreateVReg(CI))
         .addUse(getOrCreateVReg(*CI.getArgOperand(0)))
         .addUse(getOrCreateVReg(*CI.getArgOperand(1)));
-    return true;
-  case Intrinsic::exp:
-    MIRBuilder.buildInstr(TargetOpcode::G_FEXP)
-        .addDef(getOrCreateVReg(CI))
-        .addUse(getOrCreateVReg(*CI.getArgOperand(0)));
-    return true;
-  case Intrinsic::exp2:
-    MIRBuilder.buildInstr(TargetOpcode::G_FEXP2)
-        .addDef(getOrCreateVReg(CI))
-        .addUse(getOrCreateVReg(*CI.getArgOperand(0)));
-    return true;
-  case Intrinsic::log:
-    MIRBuilder.buildInstr(TargetOpcode::G_FLOG)
-        .addDef(getOrCreateVReg(CI))
-        .addUse(getOrCreateVReg(*CI.getArgOperand(0)));
-    return true;
-  case Intrinsic::log2:
-    MIRBuilder.buildInstr(TargetOpcode::G_FLOG2)
-        .addDef(getOrCreateVReg(CI))
-        .addUse(getOrCreateVReg(*CI.getArgOperand(0)));
     return true;
   case Intrinsic::fma:
     MIRBuilder.buildInstr(TargetOpcode::G_FMA)
@@ -880,6 +833,7 @@ bool IRTranslator::translateInvoke(const User &U,
   // FIXME: support Windows exception handling.
   if (!isa<LandingPadInst>(EHPadBB->front()))
     return false;
+
 
   // Emit the actual call, bracketed by EH_LABELs so that the MF knows about
   // the region covered by the try.
@@ -1098,7 +1052,7 @@ bool IRTranslator::translateShuffleVector(const User &U,
 
 bool IRTranslator::translatePHI(const User &U, MachineIRBuilder &MIRBuilder) {
   const PHINode &PI = cast<PHINode>(U);
-  auto MIB = MIRBuilder.buildInstr(TargetOpcode::G_PHI);
+  auto MIB = MIRBuilder.buildInstr(TargetOpcode::PHI);
   MIB.addDef(getOrCreateVReg(PI));
 
   PendingPHIs.emplace_back(&PI, MIB.getInstr());
@@ -1241,7 +1195,7 @@ bool IRTranslator::runOnMachineFunction(MachineFunction &CurMF) {
   MRI = &MF->getRegInfo();
   DL = &F.getParent()->getDataLayout();
   TPC = &getAnalysis<TargetPassConfig>();
-  ORE = llvm::make_unique<OptimizationRemarkEmitter>(&F);
+  ORE = make_unique<OptimizationRemarkEmitter>(&F);
 
   assert(PendingPHIs.empty() && "stale PHIs");
 

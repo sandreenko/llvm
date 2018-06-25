@@ -37,37 +37,17 @@
 #ifndef LLVM_ANALYSIS_REGIONINFO_H
 #define LLVM_ANALYSIS_REGIONINFO_H
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DepthFirstIterator.h"
-#include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/iterator_range.h"
-#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/PassManager.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/raw_ostream.h"
-#include <algorithm>
-#include <cassert>
 #include <map>
 #include <memory>
 #include <set>
-#include <string>
-#include <type_traits>
-#include <vector>
 
 namespace llvm {
-
-class DominanceFrontier;
-class DominatorTree;
-class Loop;
-class LoopInfo;
-struct PostDominatorTree;
-class Region;
-template <class RegionTr> class RegionBase;
-class RegionInfo;
-template <class RegionTr> class RegionInfoBase;
-class RegionNode;
 
 // Class to be specialized for different users of RegionInfo
 // (i.e. BasicBlocks or MachineBasicBlocks). This is only to avoid needing to
@@ -79,23 +59,37 @@ struct RegionTraits {
   // RegionT
   // RegionNodeT
   // RegionInfoT
-  using BrokenT = typename FuncT_::UnknownRegionTypeError;
+  typedef typename FuncT_::UnknownRegionTypeError BrokenT;
 };
+
+class DominatorTree;
+class DominanceFrontier;
+class Loop;
+class LoopInfo;
+struct PostDominatorTree;
+class raw_ostream;
+class Region;
+template <class RegionTr>
+class RegionBase;
+class RegionNode;
+class RegionInfo;
+template <class RegionTr>
+class RegionInfoBase;
 
 template <>
 struct RegionTraits<Function> {
-  using FuncT = Function;
-  using BlockT = BasicBlock;
-  using RegionT = Region;
-  using RegionNodeT = RegionNode;
-  using RegionInfoT = RegionInfo;
-  using DomTreeT = DominatorTree;
-  using DomTreeNodeT = DomTreeNode;
-  using DomFrontierT = DominanceFrontier;
-  using PostDomTreeT = PostDominatorTree;
-  using InstT = Instruction;
-  using LoopT = Loop;
-  using LoopInfoT = LoopInfo;
+  typedef Function FuncT;
+  typedef BasicBlock BlockT;
+  typedef Region RegionT;
+  typedef RegionNode RegionNodeT;
+  typedef RegionInfo RegionInfoT;
+  typedef DominatorTree DomTreeT;
+  typedef DomTreeNode DomTreeNodeT;
+  typedef DominanceFrontier DomFrontierT;
+  typedef PostDominatorTree PostDomTreeT;
+  typedef Instruction InstT;
+  typedef Loop LoopT;
+  typedef LoopInfo LoopInfoT;
 
   static unsigned getNumSuccessors(BasicBlock *BB) {
     return BB->getTerminator()->getNumSuccessors();
@@ -119,10 +113,13 @@ class RegionNodeBase {
   friend class RegionBase<Tr>;
 
 public:
-  using BlockT = typename Tr::BlockT;
-  using RegionT = typename Tr::RegionT;
+  typedef typename Tr::BlockT BlockT;
+  typedef typename Tr::RegionT RegionT;
 
 private:
+  RegionNodeBase(const RegionNodeBase &) = delete;
+  const RegionNodeBase &operator=(const RegionNodeBase &) = delete;
+
   /// This is the entry basic block that starts this region node.  If this is a
   /// BasicBlock RegionNode, then entry is just the basic block, that this
   /// RegionNode represents.  Otherwise it is the entry of this (Sub)RegionNode.
@@ -153,9 +150,6 @@ protected:
       : entry(Entry, isSubRegion), parent(Parent) {}
 
 public:
-  RegionNodeBase(const RegionNodeBase &) = delete;
-  RegionNodeBase &operator=(const RegionNodeBase &) = delete;
-
   /// @brief Get the parent Region of this RegionNode.
   ///
   /// The parent Region is the Region this RegionNode belongs to. If for
@@ -253,22 +247,24 @@ public:
 /// tree, the second one creates a graphical representation using graphviz.
 template <class Tr>
 class RegionBase : public RegionNodeBase<Tr> {
+  typedef typename Tr::FuncT FuncT;
+  typedef typename Tr::BlockT BlockT;
+  typedef typename Tr::RegionInfoT RegionInfoT;
+  typedef typename Tr::RegionT RegionT;
+  typedef typename Tr::RegionNodeT RegionNodeT;
+  typedef typename Tr::DomTreeT DomTreeT;
+  typedef typename Tr::LoopT LoopT;
+  typedef typename Tr::LoopInfoT LoopInfoT;
+  typedef typename Tr::InstT InstT;
+
+  typedef GraphTraits<BlockT *> BlockTraits;
+  typedef GraphTraits<Inverse<BlockT *>> InvBlockTraits;
+  typedef typename BlockTraits::ChildIteratorType SuccIterTy;
+  typedef typename InvBlockTraits::ChildIteratorType PredIterTy;
+
   friend class RegionInfoBase<Tr>;
-
-  using FuncT = typename Tr::FuncT;
-  using BlockT = typename Tr::BlockT;
-  using RegionInfoT = typename Tr::RegionInfoT;
-  using RegionT = typename Tr::RegionT;
-  using RegionNodeT = typename Tr::RegionNodeT;
-  using DomTreeT = typename Tr::DomTreeT;
-  using LoopT = typename Tr::LoopT;
-  using LoopInfoT = typename Tr::LoopInfoT;
-  using InstT = typename Tr::InstT;
-
-  using BlockTraits = GraphTraits<BlockT *>;
-  using InvBlockTraits = GraphTraits<Inverse<BlockT *>>;
-  using SuccIterTy = typename BlockTraits::ChildIteratorType;
-  using PredIterTy = typename InvBlockTraits::ChildIteratorType;
+  RegionBase(const RegionBase &) = delete;
+  const RegionBase &operator=(const RegionBase &) = delete;
 
   // Information necessary to manage this Region.
   RegionInfoT *RI;
@@ -278,12 +274,12 @@ class RegionBase : public RegionNodeBase<Tr> {
   // (The entry BasicBlock is part of RegionNode)
   BlockT *exit;
 
-  using RegionSet = std::vector<std::unique_ptr<RegionT>>;
+  typedef std::vector<std::unique_ptr<RegionT>> RegionSet;
 
   // The subregions of this region.
   RegionSet children;
 
-  using BBNodeMapT = std::map<BlockT *, std::unique_ptr<RegionNodeT>>;
+  typedef std::map<BlockT *, std::unique_ptr<RegionNodeT>> BBNodeMapT;
 
   // Save the BasicBlock RegionNodes that are element of this Region.
   mutable BBNodeMapT BBNodeMap;
@@ -311,9 +307,6 @@ public:
   ///               region.
   RegionBase(BlockT *Entry, BlockT *Exit, RegionInfoT *RI, DomTreeT *DT,
              RegionT *Parent = nullptr);
-
-  RegionBase(const RegionBase &) = delete;
-  RegionBase &operator=(const RegionBase &) = delete;
 
   /// Delete the Region and all its subregions.
   ~RegionBase();
@@ -550,8 +543,8 @@ public:
   ///
   /// These iterators iterator over all subregions of this Region.
   //@{
-  using iterator = typename RegionSet::iterator;
-  using const_iterator = typename RegionSet::const_iterator;
+  typedef typename RegionSet::iterator iterator;
+  typedef typename RegionSet::const_iterator const_iterator;
 
   iterator begin() { return children.begin(); }
   iterator end() { return children.end(); }
@@ -570,13 +563,12 @@ public:
   class block_iterator_wrapper
       : public df_iterator<
             typename std::conditional<IsConst, const BlockT, BlockT>::type *> {
-    using super =
-        df_iterator<
-            typename std::conditional<IsConst, const BlockT, BlockT>::type *>;
+    typedef df_iterator<
+        typename std::conditional<IsConst, const BlockT, BlockT>::type *> super;
 
   public:
-    using Self = block_iterator_wrapper<IsConst>;
-    using value_type = typename super::value_type;
+    typedef block_iterator_wrapper<IsConst> Self;
+    typedef typename super::value_type value_type;
 
     // Construct the begin iterator.
     block_iterator_wrapper(value_type Entry, value_type Exit)
@@ -600,8 +592,8 @@ public:
     }
   };
 
-  using block_iterator = block_iterator_wrapper<false>;
-  using const_block_iterator = block_iterator_wrapper<true>;
+  typedef block_iterator_wrapper<false> block_iterator;
+  typedef block_iterator_wrapper<true> const_block_iterator;
 
   block_iterator block_begin() { return block_iterator(getEntry(), getExit()); }
 
@@ -612,8 +604,8 @@ public:
   }
   const_block_iterator block_end() const { return const_block_iterator(); }
 
-  using block_range = iterator_range<block_iterator>;
-  using const_block_range = iterator_range<const_block_iterator>;
+  typedef iterator_range<block_iterator> block_range;
+  typedef iterator_range<const_block_iterator> const_block_range;
 
   /// @brief Returns a range view of the basic blocks in the region.
   inline block_range blocks() {
@@ -634,14 +626,14 @@ public:
   /// are direct children of this Region. It does not iterate over any
   /// RegionNodes that are also element of a subregion of this Region.
   //@{
-  using element_iterator =
-      df_iterator<RegionNodeT *, df_iterator_default_set<RegionNodeT *>, false,
-                  GraphTraits<RegionNodeT *>>;
+  typedef df_iterator<RegionNodeT *, df_iterator_default_set<RegionNodeT *>,
+                      false, GraphTraits<RegionNodeT *>>
+      element_iterator;
 
-  using const_element_iterator =
-      df_iterator<const RegionNodeT *,
-                  df_iterator_default_set<const RegionNodeT *>, false,
-                  GraphTraits<const RegionNodeT *>>;
+  typedef df_iterator<const RegionNodeT *,
+                      df_iterator_default_set<const RegionNodeT *>, false,
+                      GraphTraits<const RegionNodeT *>>
+      const_element_iterator;
 
   element_iterator element_begin();
   element_iterator element_end();
@@ -669,26 +661,29 @@ inline raw_ostream &operator<<(raw_ostream &OS, const RegionNodeBase<Tr> &Node);
 /// Tree.
 template <class Tr>
 class RegionInfoBase {
+  typedef typename Tr::BlockT BlockT;
+  typedef typename Tr::FuncT FuncT;
+  typedef typename Tr::RegionT RegionT;
+  typedef typename Tr::RegionInfoT RegionInfoT;
+  typedef typename Tr::DomTreeT DomTreeT;
+  typedef typename Tr::DomTreeNodeT DomTreeNodeT;
+  typedef typename Tr::PostDomTreeT PostDomTreeT;
+  typedef typename Tr::DomFrontierT DomFrontierT;
+  typedef GraphTraits<BlockT *> BlockTraits;
+  typedef GraphTraits<Inverse<BlockT *>> InvBlockTraits;
+  typedef typename BlockTraits::ChildIteratorType SuccIterTy;
+  typedef typename InvBlockTraits::ChildIteratorType PredIterTy;
+
   friend class RegionInfo;
   friend class MachineRegionInfo;
-
-  using BlockT = typename Tr::BlockT;
-  using FuncT = typename Tr::FuncT;
-  using RegionT = typename Tr::RegionT;
-  using RegionInfoT = typename Tr::RegionInfoT;
-  using DomTreeT = typename Tr::DomTreeT;
-  using DomTreeNodeT = typename Tr::DomTreeNodeT;
-  using PostDomTreeT = typename Tr::PostDomTreeT;
-  using DomFrontierT = typename Tr::DomFrontierT;
-  using BlockTraits = GraphTraits<BlockT *>;
-  using InvBlockTraits = GraphTraits<Inverse<BlockT *>>;
-  using SuccIterTy = typename BlockTraits::ChildIteratorType;
-  using PredIterTy = typename InvBlockTraits::ChildIteratorType;
-
-  using BBtoBBMap = DenseMap<BlockT *, BlockT *>;
-  using BBtoRegionMap = DenseMap<BlockT *, RegionT *>;
+  typedef DenseMap<BlockT *, BlockT *> BBtoBBMap;
+  typedef DenseMap<BlockT *, RegionT *> BBtoRegionMap;
 
   RegionInfoBase();
+  virtual ~RegionInfoBase();
+
+  RegionInfoBase(const RegionInfoBase &) = delete;
+  const RegionInfoBase &operator=(const RegionInfoBase &) = delete;
 
   RegionInfoBase(RegionInfoBase &&Arg)
     : DT(std::move(Arg.DT)), PDT(std::move(Arg.PDT)), DF(std::move(Arg.DF)),
@@ -696,7 +691,6 @@ class RegionInfoBase {
       BBtoRegion(std::move(Arg.BBtoRegion)) {
     Arg.wipe();
   }
-
   RegionInfoBase &operator=(RegionInfoBase &&RHS) {
     DT = std::move(RHS.DT);
     PDT = std::move(RHS.PDT);
@@ -707,14 +701,12 @@ class RegionInfoBase {
     return *this;
   }
 
-  virtual ~RegionInfoBase();
-
   DomTreeT *DT;
   PostDomTreeT *PDT;
   DomFrontierT *DF;
 
   /// The top level region.
-  RegionT *TopLevelRegion = nullptr;
+  RegionT *TopLevelRegion;
 
   /// Map every BB to the smallest region, that contains BB.
   BBtoRegionMap BBtoRegion;
@@ -793,9 +785,6 @@ private:
   void calculate(FuncT &F);
 
 public:
-  RegionInfoBase(const RegionInfoBase &) = delete;
-  RegionInfoBase &operator=(const RegionInfoBase &) = delete;
-
   static bool VerifyRegionInfo;
   static typename RegionT::PrintStyle printStyle;
 
@@ -898,21 +887,20 @@ public:
 
 class RegionInfo : public RegionInfoBase<RegionTraits<Function>> {
 public:
-  using Base = RegionInfoBase<RegionTraits<Function>>;
+  typedef RegionInfoBase<RegionTraits<Function>> Base;
 
   explicit RegionInfo();
+
+  ~RegionInfo() override;
 
   RegionInfo(RegionInfo &&Arg) : Base(std::move(static_cast<Base &>(Arg))) {
     updateRegionTree(*this, TopLevelRegion);
   }
-
   RegionInfo &operator=(RegionInfo &&RHS) {
     Base::operator=(std::move(static_cast<Base &>(RHS)));
     updateRegionTree(*this, TopLevelRegion);
     return *this;
   }
-
-  ~RegionInfo() override;
 
   /// Handle invalidation explicitly.
   bool invalidate(Function &F, const PreservedAnalyses &PA,
@@ -943,8 +931,8 @@ class RegionInfoPass : public FunctionPass {
 
 public:
   static char ID;
-
   explicit RegionInfoPass();
+
   ~RegionInfoPass() override;
 
   RegionInfo &getRegionInfo() { return RI; }
@@ -965,11 +953,10 @@ public:
 /// \brief Analysis pass that exposes the \c RegionInfo for a function.
 class RegionInfoAnalysis : public AnalysisInfoMixin<RegionInfoAnalysis> {
   friend AnalysisInfoMixin<RegionInfoAnalysis>;
-
   static AnalysisKey Key;
 
 public:
-  using Result = RegionInfo;
+  typedef RegionInfo Result;
 
   RegionInfo run(Function &F, FunctionAnalysisManager &AM);
 };
@@ -980,7 +967,6 @@ class RegionInfoPrinterPass : public PassInfoMixin<RegionInfoPrinterPass> {
 
 public:
   explicit RegionInfoPrinterPass(raw_ostream &OS);
-
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
 
@@ -1009,8 +995,8 @@ RegionNodeBase<RegionTraits<Function>>::getNodeAs<Region>() const {
 template <class Tr>
 inline raw_ostream &operator<<(raw_ostream &OS,
                                const RegionNodeBase<Tr> &Node) {
-  using BlockT = typename Tr::BlockT;
-  using RegionT = typename Tr::RegionT;
+  typedef typename Tr::BlockT BlockT;
+  typedef typename Tr::RegionT RegionT;
 
   if (Node.isSubRegion())
     return OS << Node.template getNodeAs<RegionT>()->getNameStr();
@@ -1022,6 +1008,5 @@ extern template class RegionBase<RegionTraits<Function>>;
 extern template class RegionNodeBase<RegionTraits<Function>>;
 extern template class RegionInfoBase<RegionTraits<Function>>;
 
-} // end namespace llvm
-
-#endif // LLVM_ANALYSIS_REGIONINFO_H
+} // End llvm namespace
+#endif

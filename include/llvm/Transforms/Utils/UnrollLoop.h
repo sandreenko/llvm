@@ -42,18 +42,14 @@ const Loop* addClonedBlockToLoopInfo(BasicBlock *OriginalBB,
 bool UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
                 bool AllowRuntime, bool AllowExpensiveTripCount,
                 bool PreserveCondBr, bool PreserveOnlyFirst,
-                unsigned TripMultiple, unsigned PeelCount, bool UnrollRemainder,
-                LoopInfo *LI, ScalarEvolution *SE, DominatorTree *DT,
-                AssumptionCache *AC, OptimizationRemarkEmitter *ORE,
-                bool PreserveLCSSA);
+                unsigned TripMultiple, unsigned PeelCount, LoopInfo *LI,
+                ScalarEvolution *SE, DominatorTree *DT, AssumptionCache *AC,
+                OptimizationRemarkEmitter *ORE, bool PreserveLCSSA);
 
 bool UnrollRuntimeLoopRemainder(Loop *L, unsigned Count,
                                 bool AllowExpensiveTripCount,
-                                bool UseEpilogRemainder, bool UnrollRemainder,
-                                LoopInfo *LI,
+                                bool UseEpilogRemainder, LoopInfo *LI,
                                 ScalarEvolution *SE, DominatorTree *DT,
-                                AssumptionCache *AC,
-                                OptimizationRemarkEmitter *ORE,
                                 bool PreserveLCSSA);
 
 void computePeelCount(Loop *L, unsigned LoopSize,

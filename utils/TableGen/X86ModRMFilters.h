@@ -11,7 +11,7 @@
 // It contains ModR/M filters that determine which values of the ModR/M byte
 //  are valid for a partiuclar instruction.
 // Documentation for the disassembler emitter in general can be found in
-//  X86DisassemblerEmitter.h.
+//  X86DisasemblerEmitter.h.
 //
 //===----------------------------------------------------------------------===//
 

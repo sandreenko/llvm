@@ -405,7 +405,6 @@ bool PostMachineScheduler::runOnMachineFunction(MachineFunction &mf) {
 
   // Initialize the context of the pass.
   MF = &mf;
-  MLI = &getAnalysis<MachineLoopInfo>();
   PassConfig = &getAnalysis<TargetPassConfig>();
 
   if (VerifyScheduling)
@@ -438,63 +437,11 @@ static bool isSchedBoundary(MachineBasicBlock::iterator MI,
   return MI->isCall() || TII->isSchedulingBoundary(*MI, MBB, *MF);
 }
 
-/// A region of an MBB for scheduling.
-struct SchedRegion {
-  /// RegionBegin is the first instruction in the scheduling region, and
-  /// RegionEnd is either MBB->end() or the scheduling boundary after the
-  /// last instruction in the scheduling region. These iterators cannot refer
-  /// to instructions outside of the identified scheduling region because
-  /// those may be reordered before scheduling this region.
-  MachineBasicBlock::iterator RegionBegin;
-  MachineBasicBlock::iterator RegionEnd;
-  unsigned NumRegionInstrs;
-  SchedRegion(MachineBasicBlock::iterator B, MachineBasicBlock::iterator E,
-              unsigned N) :
-    RegionBegin(B), RegionEnd(E), NumRegionInstrs(N) {}
-};
-
-typedef SmallVector<SchedRegion, 16> MBBRegionsVector;
-static void
-getSchedRegions(MachineBasicBlock *MBB,
-                MBBRegionsVector &Regions,
-                bool RegionsTopDown) {
-  MachineFunction *MF = MBB->getParent();
-  const TargetInstrInfo *TII = MF->getSubtarget().getInstrInfo();
-
-  MachineBasicBlock::iterator I = nullptr;
-  for(MachineBasicBlock::iterator RegionEnd = MBB->end();
-      RegionEnd != MBB->begin(); RegionEnd = I) {
-
-    // Avoid decrementing RegionEnd for blocks with no terminator.
-    if (RegionEnd != MBB->end() ||
-        isSchedBoundary(&*std::prev(RegionEnd), &*MBB, MF, TII)) {
-      --RegionEnd;
-    }
-
-    // The next region starts above the previous region. Look backward in the
-    // instruction stream until we find the nearest boundary.
-    unsigned NumRegionInstrs = 0;
-    I = RegionEnd;
-    for (;I != MBB->begin(); --I) {
-      MachineInstr &MI = *std::prev(I);
-      if (isSchedBoundary(&MI, &*MBB, MF, TII))
-        break;
-      if (!MI.isDebugValue())
-        // MBB::size() uses instr_iterator to count. Here we need a bundle to
-        // count as a single instruction.
-        ++NumRegionInstrs;
-    }
-
-    Regions.push_back(SchedRegion(I, RegionEnd, NumRegionInstrs));
-  }
-
-  if (RegionsTopDown)
-    std::reverse(Regions.begin(), Regions.end());
-}
-
 /// Main driver for both MachineScheduler and PostMachineScheduler.
 void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
                                            bool FixKillFlags) {
+  const TargetInstrInfo *TII = MF->getSubtarget().getInstrInfo();
+
   // Visit all machine basic blocks.
   //
   // TODO: Visit blocks in global postorder or postorder within the bottom-up
@@ -512,28 +459,39 @@ void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
       continue;
 #endif
 
-    // Break the block into scheduling regions [I, RegionEnd). RegionEnd
-    // points to the scheduling boundary at the bottom of the region. The DAG
-    // does not include RegionEnd, but the region does (i.e. the next
-    // RegionEnd is above the previous RegionBegin). If the current block has
-    // no terminator then RegionEnd == MBB->end() for the bottom region.
-    //
-    // All the regions of MBB are first found and stored in MBBRegions, which
-    // will be processed (MBB) top-down if initialized with true.
+    // Break the block into scheduling regions [I, RegionEnd), and schedule each
+    // region as soon as it is discovered. RegionEnd points the scheduling
+    // boundary at the bottom of the region. The DAG does not include RegionEnd,
+    // but the region does (i.e. the next RegionEnd is above the previous
+    // RegionBegin). If the current block has no terminator then RegionEnd ==
+    // MBB->end() for the bottom region.
     //
     // The Scheduler may insert instructions during either schedule() or
     // exitRegion(), even for empty regions. So the local iterators 'I' and
-    // 'RegionEnd' are invalid across these calls. Instructions must not be
-    // added to other regions than the current one without updating MBBRegions.
+    // 'RegionEnd' are invalid across these calls.
+    //
+    // MBB::size() uses instr_iterator to count. Here we need a bundle to count
+    // as a single instruction.
+    for(MachineBasicBlock::iterator RegionEnd = MBB->end();
+        RegionEnd != MBB->begin(); RegionEnd = Scheduler.begin()) {
 
-    MBBRegionsVector MBBRegions;
-    getSchedRegions(&*MBB, MBBRegions, Scheduler.doMBBSchedRegionsTopDown());
-    for (MBBRegionsVector::iterator R = MBBRegions.begin();
-         R != MBBRegions.end(); ++R) {
-      MachineBasicBlock::iterator I = R->RegionBegin;
-      MachineBasicBlock::iterator RegionEnd = R->RegionEnd;
-      unsigned NumRegionInstrs = R->NumRegionInstrs;
+      // Avoid decrementing RegionEnd for blocks with no terminator.
+      if (RegionEnd != MBB->end() ||
+          isSchedBoundary(&*std::prev(RegionEnd), &*MBB, MF, TII)) {
+        --RegionEnd;
+      }
 
+      // The next region starts above the previous region. Look backward in the
+      // instruction stream until we find the nearest boundary.
+      unsigned NumRegionInstrs = 0;
+      MachineBasicBlock::iterator I = RegionEnd;
+      for (; I != MBB->begin(); --I) {
+        MachineInstr &MI = *std::prev(I);
+        if (isSchedBoundary(&MI, &*MBB, MF, TII))
+          break;
+        if (!MI.isDebugValue())
+          ++NumRegionInstrs;
+      }
       // Notify the scheduler of the region, even if we may skip scheduling
       // it. Perhaps it still needs to be bundled.
       Scheduler.enterRegion(&*MBB, I, RegionEnd, NumRegionInstrs);
@@ -559,11 +517,15 @@ void MachineSchedulerBase::scheduleRegions(ScheduleDAGInstrs &Scheduler,
       }
 
       // Schedule a region: possibly reorder instructions.
-      // This invalidates the original region iterators.
+      // This invalidates 'RegionEnd' and 'I'.
       Scheduler.schedule();
 
       // Close the current region.
       Scheduler.exitRegion();
+
+      // Scheduling has invalidated the current iterator 'I'. Ask the
+      // scheduler for the top of it's scheduled region.
+      RegionEnd = Scheduler.begin();
     }
     Scheduler.finishBlock();
     // FIXME: Ideally, no further passes should rely on kill flags. However,
@@ -686,16 +648,6 @@ void ScheduleDAGMI::releasePred(SUnit *SU, SDep *PredEdge) {
 void ScheduleDAGMI::releasePredecessors(SUnit *SU) {
   for (SDep &Pred : SU->Preds)
     releasePred(SU, &Pred);
-}
-
-void ScheduleDAGMI::startBlock(MachineBasicBlock *bb) {
-  ScheduleDAGInstrs::startBlock(bb);
-  SchedImpl->enterMBB(bb);
-}
-
-void ScheduleDAGMI::finishBlock() {
-  SchedImpl->leaveMBB();
-  ScheduleDAGInstrs::finishBlock();
 }
 
 /// enterRegion - Called back from MachineScheduler::runOnMachineFunction after

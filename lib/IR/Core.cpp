@@ -14,6 +14,7 @@
 
 #include "llvm-c/Core.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
@@ -49,7 +50,6 @@ void llvm::initializeCore(PassRegistry &Registry) {
   initializePrintModulePassWrapperPass(Registry);
   initializePrintFunctionPassWrapperPass(Registry);
   initializePrintBasicBlockPassPass(Registry);
-  initializeSafepointIRVerifierPass(Registry);
   initializeVerifierLegacyPassPass(Registry);
 }
 
@@ -2755,14 +2755,11 @@ static LLVMAtomicOrdering mapToLLVMOrdering(AtomicOrdering Ordering) {
   llvm_unreachable("Invalid AtomicOrdering value!");
 }
 
-// TODO: Should this and other atomic instructions support building with
-// "syncscope"?
 LLVMValueRef LLVMBuildFence(LLVMBuilderRef B, LLVMAtomicOrdering Ordering,
                             LLVMBool isSingleThread, const char *Name) {
   return wrap(
     unwrap(B)->CreateFence(mapFromLLVMOrdering(Ordering),
-                           isSingleThread ? SyncScope::SingleThread
-                                          : SyncScope::System,
+                           isSingleThread ? SingleThread : CrossThread,
                            Name));
 }
 
@@ -3044,8 +3041,7 @@ LLVMValueRef LLVMBuildAtomicRMW(LLVMBuilderRef B,LLVMAtomicRMWBinOp op,
     case LLVMAtomicRMWBinOpUMin: intop = AtomicRMWInst::UMin; break;
   }
   return wrap(unwrap(B)->CreateAtomicRMW(intop, unwrap(PTR), unwrap(Val),
-    mapFromLLVMOrdering(ordering), singleThread ? SyncScope::SingleThread
-                                                : SyncScope::System));
+    mapFromLLVMOrdering(ordering), singleThread ? SingleThread : CrossThread));
 }
 
 LLVMValueRef LLVMBuildAtomicCmpXchg(LLVMBuilderRef B, LLVMValueRef Ptr,
@@ -3057,7 +3053,7 @@ LLVMValueRef LLVMBuildAtomicCmpXchg(LLVMBuilderRef B, LLVMValueRef Ptr,
   return wrap(unwrap(B)->CreateAtomicCmpXchg(unwrap(Ptr), unwrap(Cmp),
                 unwrap(New), mapFromLLVMOrdering(SuccessOrdering),
                 mapFromLLVMOrdering(FailureOrdering),
-                singleThread ? SyncScope::SingleThread : SyncScope::System));
+                singleThread ? SingleThread : CrossThread));
 }
 
 
@@ -3065,18 +3061,17 @@ LLVMBool LLVMIsAtomicSingleThread(LLVMValueRef AtomicInst) {
   Value *P = unwrap<Value>(AtomicInst);
 
   if (AtomicRMWInst *I = dyn_cast<AtomicRMWInst>(P))
-    return I->getSyncScopeID() == SyncScope::SingleThread;
-  return cast<AtomicCmpXchgInst>(P)->getSyncScopeID() ==
-             SyncScope::SingleThread;
+    return I->getSynchScope() == SingleThread;
+  return cast<AtomicCmpXchgInst>(P)->getSynchScope() == SingleThread;
 }
 
 void LLVMSetAtomicSingleThread(LLVMValueRef AtomicInst, LLVMBool NewValue) {
   Value *P = unwrap<Value>(AtomicInst);
-  SyncScope::ID SSID = NewValue ? SyncScope::SingleThread : SyncScope::System;
+  SynchronizationScope Sync = NewValue ? SingleThread : CrossThread;
 
   if (AtomicRMWInst *I = dyn_cast<AtomicRMWInst>(P))
-    return I->setSyncScopeID(SSID);
-  return cast<AtomicCmpXchgInst>(P)->setSyncScopeID(SSID);
+    return I->setSynchScope(Sync);
+  return cast<AtomicCmpXchgInst>(P)->setSynchScope(Sync);
 }
 
 LLVMAtomicOrdering LLVMGetCmpXchgSuccessOrdering(LLVMValueRef CmpXchgInst)  {

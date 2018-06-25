@@ -61,6 +61,14 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
   case Sparc::fixup_sparc_lo10:
     return Value & 0x3ff;
 
+  case Sparc::fixup_sparc_tls_ldo_hix22:
+  case Sparc::fixup_sparc_tls_le_hix22:
+    return (~Value >> 10) & 0x3fffff;
+
+  case Sparc::fixup_sparc_tls_ldo_lox10:
+  case Sparc::fixup_sparc_tls_le_lox10:
+    return (~(~Value & 0x3ff)) & 0x1fff;
+
   case Sparc::fixup_sparc_h44:
     return (Value >> 22) & 0x3fffff;
 
@@ -75,13 +83,6 @@ static unsigned adjustFixupValue(unsigned Kind, uint64_t Value) {
 
   case Sparc::fixup_sparc_hm:
     return (Value >> 32) & 0x3ff;
-
-  case Sparc::fixup_sparc_tls_ldo_hix22:
-  case Sparc::fixup_sparc_tls_le_hix22:
-  case Sparc::fixup_sparc_tls_ldo_lox10:
-  case Sparc::fixup_sparc_tls_le_lox10:
-    assert(Value == 0 && "Sparc TLS relocs expect zero Value");
-    return 0;
 
   case Sparc::fixup_sparc_tls_gd_add:
   case Sparc::fixup_sparc_tls_gd_call:
@@ -202,15 +203,15 @@ namespace {
       return InfosBE[Kind - FirstTargetFixupKind];
     }
 
-    bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
-                               const MCValue &Target) override {
+    void processFixupValue(const MCAssembler &Asm, const MCAsmLayout &Layout,
+                           const MCFixup &Fixup, const MCFragment *DF,
+                           const MCValue &Target, uint64_t &Value,
+                           bool &IsResolved) override {
       switch ((Sparc::Fixups)Fixup.getKind()) {
-      default:
-        return false;
+      default: break;
       case Sparc::fixup_sparc_wplt30:
         if (Target.getSymA()->getSymbol().isTemporary())
-          return false;
-        LLVM_FALLTHROUGH;
+          return;
       case Sparc::fixup_sparc_tls_gd_hi22:
       case Sparc::fixup_sparc_tls_gd_lo10:
       case Sparc::fixup_sparc_tls_gd_add:
@@ -228,8 +229,7 @@ namespace {
       case Sparc::fixup_sparc_tls_ie_ldx:
       case Sparc::fixup_sparc_tls_ie_add:
       case Sparc::fixup_sparc_tls_le_hix22:
-      case Sparc::fixup_sparc_tls_le_lox10:
-        return true;
+      case Sparc::fixup_sparc_tls_le_lox10:  IsResolved = false; break;
       }
     }
 
@@ -273,9 +273,9 @@ namespace {
     ELFSparcAsmBackend(const Target &T, Triple::OSType OSType) :
       SparcAsmBackend(T), OSType(OSType) { }
 
-    void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                    const MCValue &Target, MutableArrayRef<char> Data,
-                    uint64_t Value, bool IsResolved) const override {
+    void applyFixup(const MCFixup &Fixup, MutableArrayRef<char> Data,
+                    uint64_t Value, bool IsPCRel,
+                    MCContext &Ctx) const override {
 
       Value = adjustFixupValue(Fixup.getKind(), Value);
       if (!Value) return;           // Doesn't change encoding.

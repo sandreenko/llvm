@@ -220,9 +220,8 @@ public:
                      const MachineInstr &Orig,
                      const TargetRegisterInfo &TRI) const override;
 
-  MachineInstr &
-  duplicate(MachineBasicBlock &MBB, MachineBasicBlock::iterator InsertBefore,
-            const MachineInstr &Orig) const override;
+  MachineInstr *duplicate(MachineInstr &Orig,
+                          MachineFunction &MF) const override;
 
   const MachineInstrBuilder &AddDReg(MachineInstrBuilder &MIB, unsigned Reg,
                                      unsigned SubIdx, unsigned State,

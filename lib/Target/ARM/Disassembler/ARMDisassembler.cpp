@@ -486,14 +486,7 @@ DecodeStatus ARMDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
     }
   }
 
-  Result =
-      decodeInstruction(DecoderTableCoProc32, MI, Insn, Address, this, STI);
-  if (Result != MCDisassembler::Fail) {
-    Size = 4;
-    return checkDecodedInstruction(MI, Size, Address, OS, CS, Insn, Result);
-  }
-
-  Size = 4;
+  Size = 0;
   return MCDisassembler::Fail;
 }
 
@@ -826,14 +819,6 @@ DecodeStatus ThumbDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
       Size = 4;
       return Result;
     }
-  }
-
-  Result =
-      decodeInstruction(DecoderTableThumb2CoProc32, MI, Insn32, Address, this, STI);
-  if (Result != MCDisassembler::Fail) {
-    Size = 4;
-    Check(Result, AddThumbPredicate(MI));
-    return Result;
   }
 
   Size = 0;

@@ -33,7 +33,7 @@ extern "C" {
  * @{
  */
 
-/** DEPRECATED - Use LLVMAddSLPVectorizePass */
+/** See llvm::createBBVectorizePass function. */
 void LLVMAddBBVectorizePass(LLVMPassManagerRef PM);
 
 /** See llvm::createLoopVectorizePass function. */

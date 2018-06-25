@@ -135,13 +135,12 @@ public:
   virtual void *getPointerToNamedFunction(const std::string &Name,
                                           bool AbortOnFailure = true);
 
-protected:
+private:
   struct EHFrame {
     uint8_t *Addr;
     size_t Size;
   };
-  typedef std::vector<EHFrame> EHFrameInfos;
-  EHFrameInfos EHFrames;
+  std::vector<EHFrame> EHFrames;
 };
 
 // Create wrappers for C Binding types (see CBindingWrapping.h).

@@ -32,8 +32,8 @@ class SystemZTargetMachine : public LLVMTargetMachine {
 public:
   SystemZTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
-                       Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
-                       CodeGenOpt::Level OL, bool JIT);
+                       Optional<Reloc::Model> RM, CodeModel::Model CM,
+                       CodeGenOpt::Level OL);
   ~SystemZTargetMachine() override;
 
   const SystemZSubtarget *getSubtargetImpl() const { return &Subtarget; }
@@ -51,6 +51,8 @@ public:
   }
 
   bool targetSchedulesPostRAScheduling() const override { return true; };
+
+  bool isMachineVerifierClean() const override { return false; }
 };
 
 } // end namespace llvm

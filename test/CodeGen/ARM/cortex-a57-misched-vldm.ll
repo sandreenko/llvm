@@ -8,11 +8,11 @@
 ; CHECK:       rdefs left
 ; CHECK-NEXT:  Latency            : 6
 ; CHECK:       Successors:
-; CHECK:       Data
+; CHECK:       data
 ; CHECK-SAME:  Latency=5
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data 
 ; CHECK-SAME:  Latency=5
-; CHECK-NEXT:  Data
+; CHECK-NEXT:  data 
 ; CHECK-SAME:  Latency=6
 
 define double @foo(double* %a) nounwind optsize {

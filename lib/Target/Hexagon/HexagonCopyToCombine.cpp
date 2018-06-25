@@ -253,8 +253,7 @@ static bool isUnsafeToMoveAcross(MachineInstr &MI, unsigned UseReg,
                                  const TargetRegisterInfo *TRI) {
   return (UseReg && (MI.modifiesRegister(UseReg, TRI))) ||
          MI.modifiesRegister(DestReg, TRI) || MI.readsRegister(DestReg, TRI) ||
-         MI.hasUnmodeledSideEffects() || MI.isInlineAsm() ||
-         MI.isMetaInstruction();
+         MI.hasUnmodeledSideEffects() || MI.isInlineAsm() || MI.isDebugValue();
 }
 
 static unsigned UseReg(const MachineOperand& MO) {

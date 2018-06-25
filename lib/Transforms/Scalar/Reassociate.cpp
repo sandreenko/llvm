@@ -149,18 +149,17 @@ static BinaryOperator *isReassociableOp(Value *V, unsigned Opcode1,
 
 void ReassociatePass::BuildRankMap(Function &F,
                                    ReversePostOrderTraversal<Function*> &RPOT) {
-  unsigned Rank = 2;
+  unsigned i = 2;
 
   // Assign distinct ranks to function arguments.
-  for (auto &Arg : F.args()) {
-    ValueRankMap[&Arg] = ++Rank;
-    DEBUG(dbgs() << "Calculated Rank[" << Arg.getName() << "] = " << Rank
-                 << "\n");
+  for (Function::arg_iterator I = F.arg_begin(), E = F.arg_end(); I != E; ++I) {
+    ValueRankMap[&*I] = ++i;
+    DEBUG(dbgs() << "Calculated Rank[" << I->getName() << "] = " << i << "\n");
   }
 
   // Traverse basic blocks in ReversePostOrder
   for (BasicBlock *BB : RPOT) {
-    unsigned BBRank = RankMap[BB] = ++Rank << 16;
+    unsigned BBRank = RankMap[BB] = ++i << 16;
 
     // Walk the basic block, adding precomputed ranks for any instructions that
     // we cannot move.  This ensures that the ranks for these instructions are
@@ -208,9 +207,13 @@ void ReassociatePass::canonicalizeOperands(Instruction *I) {
 
   Value *LHS = I->getOperand(0);
   Value *RHS = I->getOperand(1);
-  if (LHS == RHS || isa<Constant>(RHS))
+  unsigned LHSRank = getRank(LHS);
+  unsigned RHSRank = getRank(RHS);
+
+  if (isa<Constant>(RHS))
     return;
-  if (isa<Constant>(LHS) || getRank(RHS) < getRank(LHS))
+
+  if (isa<Constant>(LHS) || RHSRank < LHSRank)
     cast<BinaryOperator>(I)->swapOperands();
 }
 
@@ -1891,8 +1894,6 @@ void ReassociatePass::EraseInst(Instruction *I) {
         Op = Op->user_back();
       RedoInsts.insert(Op);
     }
-
-  MadeChange = true;
 }
 
 // Canonicalize expressions of the following form:
@@ -1936,12 +1937,6 @@ Instruction *ReassociatePass::canonicalizeNegConstExpr(Instruction *I) {
   // Subtraction is not commutative. Explicitly, the following transform is
   // not valid: (-Constant * y) - x  -> x + (Constant * y)
   if (!User->isCommutative() && User->getOperand(1) != I)
-    return nullptr;
-
-  // Don't canonicalize x + (-Constant * y) -> x - (Constant * y), if the
-  // resulting subtract will be broken up later.  This can get us into an
-  // infinite loop during reassociation.
-  if (UserOpcode == Instruction::FAdd && ShouldBreakUpSubtract(User))
     return nullptr;
 
   // Change the sign of the constant.
@@ -2137,8 +2132,7 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
     DEBUG(dbgs() << "Reassoc to scalar: " << *V << '\n');
     I->replaceAllUsesWith(V);
     if (Instruction *VI = dyn_cast<Instruction>(V))
-      if (I->getDebugLoc())
-        VI->setDebugLoc(I->getDebugLoc());
+      VI->setDebugLoc(I->getDebugLoc());
     RedoInsts.insert(I);
     ++NumAnnihil;
     return;
@@ -2152,7 +2146,7 @@ void ReassociatePass::ReassociateExpression(BinaryOperator *I) {
     if (I->getOpcode() == Instruction::Mul &&
         cast<Instruction>(I->user_back())->getOpcode() == Instruction::Add &&
         isa<ConstantInt>(Ops.back().Op) &&
-        cast<ConstantInt>(Ops.back().Op)->isMinusOne()) {
+        cast<ConstantInt>(Ops.back().Op)->isAllOnesValue()) {
       ValueEntry Tmp = Ops.pop_back_val();
       Ops.insert(Ops.begin(), Tmp);
     } else if (I->getOpcode() == Instruction::FMul &&

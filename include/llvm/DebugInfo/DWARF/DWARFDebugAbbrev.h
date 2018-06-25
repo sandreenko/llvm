@@ -18,8 +18,6 @@
 
 namespace llvm {
 
-class raw_ostream;
-
 class DWARFAbbreviationDeclarationSet {
   uint32_t Offset;
   /// Code of the first abbreviation, if all abbreviations in the set have
@@ -27,8 +25,8 @@ class DWARFAbbreviationDeclarationSet {
   uint32_t FirstAbbrCode;
   std::vector<DWARFAbbreviationDeclaration> Decls;
 
-  using const_iterator =
-      std::vector<DWARFAbbreviationDeclaration>::const_iterator;
+  typedef std::vector<DWARFAbbreviationDeclaration>::const_iterator
+      const_iterator;
 
 public:
   DWARFAbbreviationDeclarationSet();
@@ -53,8 +51,8 @@ private:
 };
 
 class DWARFDebugAbbrev {
-  using DWARFAbbreviationDeclarationSetMap =
-      std::map<uint64_t, DWARFAbbreviationDeclarationSet>;
+  typedef std::map<uint64_t, DWARFAbbreviationDeclarationSet>
+    DWARFAbbreviationDeclarationSetMap;
 
   DWARFAbbreviationDeclarationSetMap AbbrDeclSets;
   mutable DWARFAbbreviationDeclarationSetMap::const_iterator PrevAbbrOffsetPos;

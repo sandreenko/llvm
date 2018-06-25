@@ -30,9 +30,14 @@ public:
 
   unsigned getNumFixupKinds() const override { return AMDGPU::NumTargetFixupKinds; };
 
-  void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                  const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved) const override;
+  void processFixupValue(const MCAssembler &Asm,
+                         const MCAsmLayout &Layout,
+                         const MCFixup &Fixup, const MCFragment *DF,
+                         const MCValue &Target, uint64_t &Value,
+                         bool &IsResolved) override;
+
+  void applyFixup(const MCFixup &Fixup, MutableArrayRef<char> Data,
+                  uint64_t Value, bool IsPCRel, MCContext &Ctx) const override;
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *DF,
                             const MCAsmLayout &Layout) const override {
@@ -43,8 +48,6 @@ public:
     llvm_unreachable("Not implemented");
   }
   bool mayNeedRelaxation(const MCInst &Inst) const override { return false; }
-
-  unsigned getMinimumNopSize() const override;
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const override;
 
   const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const override;
@@ -78,7 +81,7 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
                                  MCContext *Ctx) {
   int64_t SignedValue = static_cast<int64_t>(Value);
 
-  switch (static_cast<unsigned>(Fixup.getKind())) {
+  switch (Fixup.getKind()) {
   case AMDGPU::fixup_si_sopp_br: {
     int64_t BrImm = (SignedValue - 4) / 4;
 
@@ -99,11 +102,36 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
   }
 }
 
-void AMDGPUAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                                  const MCValue &Target,
+void AMDGPUAsmBackend::processFixupValue(const MCAssembler &Asm,
+                                         const MCAsmLayout &Layout,
+                                         const MCFixup &Fixup, const MCFragment *DF,
+                                         const MCValue &Target, uint64_t &Value,
+                                         bool &IsResolved) {
+  MCValue Res;
+
+  // When we have complex expressions like: BB0_1 + (BB0_2 - 4), which are
+  // used for long branches, this function will be called with
+  // IsResolved = false and Value set to some pre-computed value.  In
+  // the example above, the value would be:
+  // (BB0_1 + (BB0_2 - 4)) - CurrentOffsetFromStartOfFunction.
+  // This is not what we want.  We just want the expression computation
+  // only.  The reason the MC layer subtracts the current offset from the
+  // expression is because the fixup is of kind FK_PCRel_4.
+  // For these scenarios, evaluateAsValue gives us the computation that we
+  // want.
+  if (!IsResolved && Fixup.getValue()->evaluateAsValue(Res, Layout) &&
+      Res.isAbsolute()) {
+    Value = Res.getConstant();
+    IsResolved = true;
+
+  }
+  if (IsResolved)
+    Value = adjustFixupValue(Fixup, Value, &Asm.getContext());
+}
+
+void AMDGPUAsmBackend::applyFixup(const MCFixup &Fixup,
                                   MutableArrayRef<char> Data, uint64_t Value,
-                                  bool IsResolved) const {
-  Value = adjustFixupValue(Fixup, Value, &Asm.getContext());
+                                  bool IsPCRel, MCContext &Ctx) const {
   if (!Value)
     return; // Doesn't change encoding.
 
@@ -133,10 +161,6 @@ const MCFixupKindInfo &AMDGPUAsmBackend::getFixupKindInfo(
     return MCAsmBackend::getFixupKindInfo(Kind);
 
   return Infos[Kind - FirstTargetFixupKind];
-}
-
-unsigned AMDGPUAsmBackend::getMinimumNopSize() const {
-  return 4;
 }
 
 bool AMDGPUAsmBackend::writeNopData(uint64_t Count, MCObjectWriter *OW) const {

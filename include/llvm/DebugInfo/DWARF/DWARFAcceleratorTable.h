@@ -12,8 +12,8 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/DebugInfo/DWARF/DWARFDataExtractor.h"
 #include "llvm/DebugInfo/DWARF/DWARFRelocMap.h"
+#include "llvm/Support/DataExtractor.h"
 #include <cstdint>
 #include <utility>
 
@@ -32,40 +32,28 @@ class DWARFAcceleratorTable {
   };
 
   struct HeaderData {
-    using AtomType = uint16_t;
-    using Form = dwarf::Form;
-
+    typedef uint16_t AtomType;
+    typedef dwarf::Form Form;
     uint32_t DIEOffsetBase;
     SmallVector<std::pair<AtomType, Form>, 3> Atoms;
   };
 
   struct Header Hdr;
   struct HeaderData HdrData;
-  DWARFDataExtractor AccelSection;
+  DataExtractor AccelSection;
   DataExtractor StringSection;
+  const RelocAddrMap& Relocs;
 
 public:
-  DWARFAcceleratorTable(const DWARFDataExtractor &AccelSection,
-                        DataExtractor StringSection)
-      : AccelSection(AccelSection), StringSection(StringSection) {}
+  DWARFAcceleratorTable(DataExtractor AccelSection, DataExtractor StringSection,
+                        const RelocAddrMap &Relocs)
+    : AccelSection(AccelSection), StringSection(StringSection), Relocs(Relocs) {}
 
   bool extract();
   uint32_t getNumBuckets();
   uint32_t getNumHashes();
   uint32_t getSizeHdr();
   uint32_t getHeaderDataLength();
-  ArrayRef<std::pair<HeaderData::AtomType, HeaderData::Form>> getAtomsDesc();
-  bool validateForms();
-
-  /// Return information related to the DWARF DIE we're looking for when
-  /// performing a lookup by name.
-  ///
-  /// \param HashDataOffset an offset into the hash data table
-  /// \returns <DieOffset, DieTag>
-  /// DieOffset is the offset into the .debug_info section for the DIE
-  /// related to the input hash data offset.
-  /// DieTag is the tag of the DIE
-  std::pair<uint32_t, dwarf::Tag> readAtoms(uint32_t &HashDataOffset);
   void dump(raw_ostream &OS) const;
 };
 

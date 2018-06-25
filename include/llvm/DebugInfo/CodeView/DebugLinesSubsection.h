@@ -1,4 +1,4 @@
-//===- DebugLinesSubsection.h -----------------------------------*- C++ -*-===//
+//===- DebugLinesSubsection.h --------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,20 +7,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_DEBUGINFO_CODEVIEW_DEBUGLINESSUBSECTION_H
-#define LLVM_DEBUGINFO_CODEVIEW_DEBUGLINESSUBSECTION_H
+#ifndef LLVM_DEBUGINFO_CODEVIEW_MODULEDEBUGLINEFRAGMENT_H
+#define LLVM_DEBUGINFO_CODEVIEW_MODULEDEBUGLINEFRAGMENT_H
 
-#include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/DebugInfo/CodeView/Line.h"
 #include "llvm/Support/BinaryStreamArray.h"
 #include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamRef.h"
-#include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
-#include <cstdint>
-#include <vector>
 
 namespace llvm {
 namespace codeview {
@@ -78,9 +72,8 @@ public:
 
 class DebugLinesSubsectionRef final : public DebugSubsectionRef {
   friend class LineColumnExtractor;
-
-  using LineInfoArray = VarStreamArray<LineColumnEntry, LineColumnExtractor>;
-  using Iterator = LineInfoArray::Iterator;
+  typedef VarStreamArray<LineColumnEntry, LineColumnExtractor> LineInfoArray;
+  typedef LineInfoArray::Iterator Iterator;
 
 public:
   DebugLinesSubsectionRef();
@@ -137,14 +130,14 @@ public:
 
 private:
   DebugChecksumsSubsection &Checksums;
+
   uint32_t RelocOffset = 0;
   uint16_t RelocSegment = 0;
   uint32_t CodeSize = 0;
   LineFlags Flags = LF_None;
   std::vector<Block> Blocks;
 };
+}
+}
 
-} // end namespace codeview
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGLINESSUBSECTION_H
+#endif

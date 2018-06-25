@@ -38,6 +38,7 @@ public:
   void Loop();
   void MinimizeCrashLoop(const Unit &U);
   void ShuffleAndMinimize(UnitVector *V);
+  void InitializeTraceState();
   void RereadOutputCorpus(size_t MaxSize);
 
   size_t secondsSinceProcessStartUp() {
@@ -60,13 +61,11 @@ public:
 
   static void StaticAlarmCallback();
   static void StaticCrashSignalCallback();
-  static void StaticExitCallback();
   static void StaticInterruptCallback();
   static void StaticFileSizeExceedCallback();
 
   void ExecuteCallback(const uint8_t *Data, size_t Size);
-  bool RunOne(const uint8_t *Data, size_t Size, bool MayDeleteFile = false,
-              InputInfo *II = nullptr);
+  size_t RunOne(const uint8_t *Data, size_t Size);
 
   // Merge Corpora[1:] into Corpora[0].
   void Merge(const std::vector<std::string> &Corpora);
@@ -92,18 +91,27 @@ public:
 private:
   void AlarmCallback();
   void CrashCallback();
-  void ExitCallback();
   void CrashOnOverwrittenData();
   void InterruptCallback();
   void MutateAndTestOne();
   void ReportNewCoverage(InputInfo *II, const Unit &U);
-  void PrintPulseAndReportSlowInput(const uint8_t *Data, size_t Size);
+  size_t RunOne(const Unit &U) { return RunOne(U.data(), U.size()); }
   void WriteToOutputCorpus(const Unit &U);
   void WriteUnitToFileWithPrefix(const Unit &U, const char *Prefix);
   void PrintStats(const char *Where, const char *End = "\n", size_t Units = 0);
-  void PrintStatusForNewUnit(const Unit &U, const char *Text);
+  void PrintStatusForNewUnit(const Unit &U);
   void ShuffleCorpus(UnitVector *V);
+  void AddToCorpus(const Unit &U);
   void CheckExitOnSrcPosOrItem();
+
+  // Trace-based fuzzing: we run a unit with some kind of tracing
+  // enabled and record potentially useful mutations. Then
+  // We apply these mutations one by one to the unit and run it again.
+
+  // Start tracing; forget all previously proposed mutations.
+  void StartTraceRecording();
+  // Stop tracing.
+  void StopTraceRecording();
 
   static void StaticDeathCallback();
   void DumpCurrentUnit(const char *Prefix);
@@ -117,10 +125,6 @@ private:
 
   size_t TotalNumberOfRuns = 0;
   size_t NumberOfNewUnitsAdded = 0;
-
-  size_t LastCorpusUpdateRun = 0;
-  system_clock::time_point LastCorpusUpdateTime = system_clock::now();
-
 
   bool HasMoreMallocsThanFrees = false;
   size_t NumberOfLeakDetectionAttempts = 0;
@@ -137,9 +141,6 @@ private:
 
   size_t MaxInputLen = 0;
   size_t MaxMutationLen = 0;
-  size_t TmpMaxMutationLen = 0;
-
-  std::vector<uint32_t> UniqFeatureSetTmp;
 
   // Need to know our own thread.
   static thread_local bool IsMyThread;

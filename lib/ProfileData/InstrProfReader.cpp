@@ -221,7 +221,7 @@ TextInstrProfReader::readValueProfileData(InstrProfRecord &Record) {
 #undef VP_READ_ADVANCE
 }
 
-Error TextInstrProfReader::readNextRecord(NamedInstrProfRecord &Record) {
+Error TextInstrProfReader::readNextRecord(InstrProfRecord &Record) {
   // Skip empty lines and comments.
   while (!Line.is_at_end() && (Line->empty() || Line->startswith("#")))
     ++Line;
@@ -377,13 +377,13 @@ Error RawInstrProfReader<IntPtrT>::readHeader(
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::readName(NamedInstrProfRecord &Record) {
+Error RawInstrProfReader<IntPtrT>::readName(InstrProfRecord &Record) {
   Record.Name = getName(Data->NameRef);
   return success();
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::readFuncHash(NamedInstrProfRecord &Record) {
+Error RawInstrProfReader<IntPtrT>::readFuncHash(InstrProfRecord &Record) {
   Record.Hash = swap(Data->FuncHash);
   return success();
 }
@@ -445,7 +445,7 @@ Error RawInstrProfReader<IntPtrT>::readValueProfilingData(
 }
 
 template <class IntPtrT>
-Error RawInstrProfReader<IntPtrT>::readNextRecord(NamedInstrProfRecord &Record) {
+Error RawInstrProfReader<IntPtrT>::readNextRecord(InstrProfRecord &Record) {
   if (atEnd())
     // At this point, ValueDataStart field points to the next header.
     if (Error E = readNextHeader(getNextHeaderPos()))
@@ -550,7 +550,7 @@ data_type InstrProfLookupTrait::ReadData(StringRef K, const unsigned char *D,
 
 template <typename HashTableImpl>
 Error InstrProfReaderIndex<HashTableImpl>::getRecords(
-    StringRef FuncName, ArrayRef<NamedInstrProfRecord> &Data) {
+    StringRef FuncName, ArrayRef<InstrProfRecord> &Data) {
   auto Iter = HashTable->find(FuncName);
   if (Iter == HashTable->end())
     return make_error<InstrProfError>(instrprof_error::unknown_function);
@@ -564,7 +564,7 @@ Error InstrProfReaderIndex<HashTableImpl>::getRecords(
 
 template <typename HashTableImpl>
 Error InstrProfReaderIndex<HashTableImpl>::getRecords(
-    ArrayRef<NamedInstrProfRecord> &Data) {
+    ArrayRef<InstrProfRecord> &Data) {
   if (atEnd())
     return make_error<InstrProfError>(instrprof_error::eof);
 
@@ -644,7 +644,7 @@ IndexedInstrProfReader::readSummary(IndexedInstrProf::ProfVersion Version,
 
     InstrProfSummaryBuilder Builder(ProfileSummaryBuilder::DefaultCutoffs);
     // FIXME: This only computes an empty summary. Need to call addRecord for
-    // all NamedInstrProfRecords to get the correct summary.
+    // all InstrProfRecords to get the correct summary.
     this->Summary = Builder.getSummary();
     return Cur;
   }
@@ -707,7 +707,7 @@ InstrProfSymtab &IndexedInstrProfReader::getSymtab() {
 Expected<InstrProfRecord>
 IndexedInstrProfReader::getInstrProfRecord(StringRef FuncName,
                                            uint64_t FuncHash) {
-  ArrayRef<NamedInstrProfRecord> Data;
+  ArrayRef<InstrProfRecord> Data;
   Error Err = Index->getRecords(FuncName, Data);
   if (Err)
     return std::move(Err);
@@ -732,10 +732,10 @@ Error IndexedInstrProfReader::getFunctionCounts(StringRef FuncName,
   return success();
 }
 
-Error IndexedInstrProfReader::readNextRecord(NamedInstrProfRecord &Record) {
+Error IndexedInstrProfReader::readNextRecord(InstrProfRecord &Record) {
   static unsigned RecordIndex = 0;
 
-  ArrayRef<NamedInstrProfRecord> Data;
+  ArrayRef<InstrProfRecord> Data;
 
   Error E = Index->getRecords(Data);
   if (E)

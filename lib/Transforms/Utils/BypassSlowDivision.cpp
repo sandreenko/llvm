@@ -30,6 +30,15 @@ using namespace llvm;
 #define DEBUG_TYPE "bypass-slow-division"
 
 namespace {
+  struct DivOpInfo {
+    bool SignedOp;
+    Value *Dividend;
+    Value *Divisor;
+
+    DivOpInfo(bool InSignedOp, Value *InDividend, Value *InDivisor)
+      : SignedOp(InSignedOp), Dividend(InDividend), Divisor(InDivisor) {}
+  };
+
   struct QuotRemPair {
     Value *Quotient;
     Value *Remainder;
@@ -49,7 +58,30 @@ namespace {
 }
 
 namespace llvm {
-  typedef DenseMap<DivRemMapKey, QuotRemPair> DivCacheTy;
+  template<>
+  struct DenseMapInfo<DivOpInfo> {
+    static bool isEqual(const DivOpInfo &Val1, const DivOpInfo &Val2) {
+      return Val1.SignedOp == Val2.SignedOp &&
+             Val1.Dividend == Val2.Dividend &&
+             Val1.Divisor == Val2.Divisor;
+    }
+
+    static DivOpInfo getEmptyKey() {
+      return DivOpInfo(false, nullptr, nullptr);
+    }
+
+    static DivOpInfo getTombstoneKey() {
+      return DivOpInfo(true, nullptr, nullptr);
+    }
+
+    static unsigned getHashValue(const DivOpInfo &Val) {
+      return (unsigned)(reinterpret_cast<uintptr_t>(Val.Dividend) ^
+                        reinterpret_cast<uintptr_t>(Val.Divisor)) ^
+                        (unsigned)Val.SignedOp;
+    }
+  };
+
+  typedef DenseMap<DivOpInfo, QuotRemPair> DivCacheTy;
   typedef DenseMap<unsigned, unsigned> BypassWidthsTy;
   typedef SmallPtrSet<Instruction *, 4> VisitedSetTy;
 }
@@ -143,7 +175,7 @@ Value *FastDivInsertionTask::getReplacement(DivCacheTy &Cache) {
   // Then, look for a value in Cache.
   Value *Dividend = SlowDivOrRem->getOperand(0);
   Value *Divisor = SlowDivOrRem->getOperand(1);
-  DivRemMapKey Key(isSignedOp(), Dividend, Divisor);
+  DivOpInfo Key(isSignedOp(), Dividend, Divisor);
   auto CacheI = Cache.find(Key);
 
   if (CacheI == Cache.end()) {

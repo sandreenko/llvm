@@ -14,15 +14,15 @@
 ; CHECK: CodeViewDebugInfo [
 ; CHECK:   Section: .debug$S
 ; CHECK:   Subsection [
-; CHECK:     {{.*}}Proc{{.*}}Sym {
+; CHECK:     ProcStart {
 ; CHECK:       DisplayName: main
 ; CHECK:     }
-; CHECK:     InlineSiteSym {
+; CHECK:     InlineSite {
 ; CHECK:       Inlinee: same_name (0x1002)
 ; CHECK:     }
 ; CHECK:     InlineSiteEnd {
 ; CHECK:     }
-; CHECK:     InlineSiteSym {
+; CHECK:     InlineSite {
 ; CHECK:       Inlinee: same_name (0x1002)
 ; CHECK:     }
 ; CHECK:     InlineSiteEnd {

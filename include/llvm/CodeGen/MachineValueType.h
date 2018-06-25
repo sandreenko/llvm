@@ -18,7 +18,6 @@
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
-#include <cassert>
 
 namespace llvm {
 
@@ -233,7 +232,8 @@ namespace llvm {
       Any            = 255
     };
 
-    SimpleValueType SimpleTy = INVALID_SIMPLE_VALUE_TYPE;
+    SimpleValueType SimpleTy;
+
 
     // A class to represent the number of elements in a vector
     //
@@ -270,7 +270,7 @@ namespace llvm {
       }
     };
 
-    constexpr MVT() = default;
+    constexpr MVT() : SimpleTy(INVALID_SIMPLE_VALUE_TYPE) {}
     constexpr MVT(SimpleValueType SVT) : SimpleTy(SVT) {}
 
     bool operator>(const MVT& S)  const { return SimpleTy >  S.SimpleTy; }
@@ -780,6 +780,7 @@ namespace llvm {
       return getSizeInBits() <= VT.getSizeInBits();
     }
 
+
     static MVT getFloatingPointVT(unsigned BitWidth) {
       switch (BitWidth) {
       default:
@@ -981,12 +982,9 @@ namespace llvm {
     /// A simple iterator over the MVT::SimpleValueType enum.
     struct mvt_iterator {
       SimpleValueType VT;
-
       mvt_iterator(SimpleValueType VT) : VT(VT) {}
-
       MVT operator*() const { return VT; }
       bool operator!=(const mvt_iterator &LHS) const { return VT != LHS.VT; }
-
       mvt_iterator& operator++() {
         VT = (MVT::SimpleValueType)((int)VT + 1);
         assert((int)VT <= MVT::MAX_ALLOWED_VALUETYPE &&
@@ -994,9 +992,8 @@ namespace llvm {
         return *this;
       }
     };
-
     /// A range of the MVT::SimpleValueType enum.
-    using mvt_range = iterator_range<mvt_iterator>;
+    typedef iterator_range<mvt_iterator> mvt_range;
 
   public:
     /// SimpleValueType Iteration
@@ -1004,39 +1001,32 @@ namespace llvm {
     static mvt_range all_valuetypes() {
       return mvt_range(MVT::FIRST_VALUETYPE, MVT::LAST_VALUETYPE);
     }
-
     static mvt_range integer_valuetypes() {
       return mvt_range(MVT::FIRST_INTEGER_VALUETYPE,
                        (MVT::SimpleValueType)(MVT::LAST_INTEGER_VALUETYPE + 1));
     }
-
     static mvt_range fp_valuetypes() {
       return mvt_range(MVT::FIRST_FP_VALUETYPE,
                        (MVT::SimpleValueType)(MVT::LAST_FP_VALUETYPE + 1));
     }
-
     static mvt_range vector_valuetypes() {
       return mvt_range(MVT::FIRST_VECTOR_VALUETYPE,
                        (MVT::SimpleValueType)(MVT::LAST_VECTOR_VALUETYPE + 1));
     }
-
     static mvt_range integer_vector_valuetypes() {
       return mvt_range(
           MVT::FIRST_INTEGER_VECTOR_VALUETYPE,
           (MVT::SimpleValueType)(MVT::LAST_INTEGER_VECTOR_VALUETYPE + 1));
     }
-
     static mvt_range fp_vector_valuetypes() {
       return mvt_range(
           MVT::FIRST_FP_VECTOR_VALUETYPE,
           (MVT::SimpleValueType)(MVT::LAST_FP_VECTOR_VALUETYPE + 1));
     }
-
     static mvt_range integer_scalable_vector_valuetypes() {
       return mvt_range(MVT::FIRST_INTEGER_SCALABLE_VALUETYPE,
               (MVT::SimpleValueType)(MVT::LAST_INTEGER_SCALABLE_VALUETYPE + 1));
     }
-
     static mvt_range fp_scalable_vector_valuetypes() {
       return mvt_range(MVT::FIRST_FP_SCALABLE_VALUETYPE,
                    (MVT::SimpleValueType)(MVT::LAST_FP_SCALABLE_VALUETYPE + 1));
@@ -1044,6 +1034,6 @@ namespace llvm {
     /// @}
   };
 
-} // end namespace llvm
+} // End llvm namespace
 
-#endif // LLVM_CODEGEN_MACHINEVALUETYPE_H
+#endif

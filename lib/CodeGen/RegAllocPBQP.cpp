@@ -924,3 +924,5 @@ FunctionPass *llvm::createPBQPRegisterAllocator(char *customPassID) {
 FunctionPass* llvm::createDefaultPBQPRegisterAllocator() {
   return createPBQPRegisterAllocator();
 }
+
+#undef DEBUG_TYPE

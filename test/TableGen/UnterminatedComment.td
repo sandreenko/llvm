@@ -1,4 +1,4 @@
-// RUN: not llvm-tblgen < %s > /dev/null 2>&1
+// RUN: not llvm-tblgen < %s >& /dev/null
 
 def x;
 

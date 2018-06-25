@@ -19,7 +19,6 @@ namespace pdb {
 enum class generic_error_code {
   invalid_path = 1,
   dia_sdk_not_present,
-  type_server_not_found,
   unspecified,
 };
 

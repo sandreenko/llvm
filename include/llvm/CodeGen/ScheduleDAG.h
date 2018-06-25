@@ -235,9 +235,6 @@ class TargetRegisterInfo;
              "SDep::Output edge cannot use the zero register!");
       Contents.Reg = Reg;
     }
-
-    raw_ostream &print(raw_ostream &O,
-                       const TargetRegisterInfo *TRI = nullptr) const;
   };
 
   template <>
@@ -461,10 +458,7 @@ class TargetRegisterInfo;
 
     void dump(const ScheduleDAG *G) const;
     void dumpAll(const ScheduleDAG *G) const;
-    raw_ostream &print(raw_ostream &O,
-                       const SUnit *N = nullptr,
-                       const SUnit *X = nullptr) const;
-    raw_ostream &print(raw_ostream &O, const ScheduleDAG *G) const;
+    void print(raw_ostream &O, const ScheduleDAG *G) const;
 
   private:
     void ComputeDepth();

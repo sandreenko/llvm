@@ -625,22 +625,13 @@ public:
   MachineInstr *CreateMachineInstr(const MCInstrDesc &MCID, const DebugLoc &DL,
                                    bool NoImp = false);
 
-  /// Create a new MachineInstr which is a copy of \p Orig, identical in all
-  /// ways except the instruction has no parent, prev, or next. Bundling flags
-  /// are reset.
+  /// CloneMachineInstr - Create a new MachineInstr which is a copy of the
+  /// 'Orig' instruction, identical in all ways except the instruction
+  /// has no parent, prev, or next.
   ///
-  /// Note: Clones a single instruction, not whole instruction bundles.
-  /// Does not perform target specific adjustments; consider using
-  /// TargetInstrInfo::duplicate() instead.
+  /// See also TargetInstrInfo::duplicate() for target-specific fixes to cloned
+  /// instructions.
   MachineInstr *CloneMachineInstr(const MachineInstr *Orig);
-
-  /// Clones instruction or the whole instruction bundle \p Orig and insert
-  /// into \p MBB before \p InsertBefore.
-  ///
-  /// Note: Does not perform target specific adjustments; consider using
-  /// TargetInstrInfo::duplicate() intead.
-  MachineInstr &CloneMachineInstrBundle(MachineBasicBlock &MBB,
-      MachineBasicBlock::iterator InsertBefore, const MachineInstr &Orig);
 
   /// DeleteMachineInstr - Delete the given MachineInstr.
   void DeleteMachineInstr(MachineInstr *MI);
@@ -659,7 +650,7 @@ public:
       MachinePointerInfo PtrInfo, MachineMemOperand::Flags f, uint64_t s,
       unsigned base_alignment, const AAMDNodes &AAInfo = AAMDNodes(),
       const MDNode *Ranges = nullptr,
-      SyncScope::ID SSID = SyncScope::System,
+      SynchronizationScope SynchScope = CrossThread,
       AtomicOrdering Ordering = AtomicOrdering::NotAtomic,
       AtomicOrdering FailureOrdering = AtomicOrdering::NotAtomic);
 
@@ -669,12 +660,6 @@ public:
   /// explicitly deallocated.
   MachineMemOperand *getMachineMemOperand(const MachineMemOperand *MMO,
                                           int64_t Offset, uint64_t Size);
-
-  /// Allocate a new MachineMemOperand by copying an existing one,
-  /// replacing only AliasAnalysis information. MachineMemOperands are owned
-  /// by the MachineFunction and need not be explicitly deallocated.
-  MachineMemOperand *getMachineMemOperand(const MachineMemOperand *MMO,
-                                          const AAMDNodes &AAInfo);
 
   using OperandCapacity = ArrayRecycler<MachineOperand>::Capacity;
 

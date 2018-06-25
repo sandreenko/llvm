@@ -36,21 +36,19 @@ public:
 
 protected:
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  ARMSubtarget Subtarget;
   bool isLittle;
   mutable StringMap<std::unique_ptr<ARMSubtarget>> SubtargetMap;
 
 public:
   ARMBaseTargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                        StringRef FS, const TargetOptions &Options,
-                       Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
+                       Optional<Reloc::Model> RM, CodeModel::Model CM,
                        CodeGenOpt::Level OL, bool isLittle);
   ~ARMBaseTargetMachine() override;
 
+  const ARMSubtarget *getSubtargetImpl() const { return &Subtarget; }
   const ARMSubtarget *getSubtargetImpl(const Function &F) const override;
-  // DO NOT IMPLEMENT: There is no such thing as a valid default subtarget,
-  // subtargets are per-function entities based on the target-specific
-  // attributes of each function.
-  const ARMSubtarget *getSubtargetImpl() const = delete;
   bool isLittleEndian() const { return isLittle; }
 
   /// \brief Get the TargetIRAnalysis for this target.
@@ -62,6 +60,10 @@ public:
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
   }
+
+  bool isMachineVerifierClean() const override {
+    return false;
+  }
 };
 
 /// ARM/Thumb little endian target machine.
@@ -70,8 +72,8 @@ class ARMLETargetMachine : public ARMBaseTargetMachine {
 public:
   ARMLETargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                      StringRef FS, const TargetOptions &Options,
-                     Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
-                     CodeGenOpt::Level OL, bool JIT);
+                     Optional<Reloc::Model> RM, CodeModel::Model CM,
+                     CodeGenOpt::Level OL);
 };
 
 /// ARM/Thumb big endian target machine.
@@ -80,8 +82,8 @@ class ARMBETargetMachine : public ARMBaseTargetMachine {
 public:
   ARMBETargetMachine(const Target &T, const Triple &TT, StringRef CPU,
                      StringRef FS, const TargetOptions &Options,
-                     Optional<Reloc::Model> RM, Optional<CodeModel::Model> CM,
-                     CodeGenOpt::Level OL, bool JIT);
+                     Optional<Reloc::Model> RM, CodeModel::Model CM,
+                     CodeGenOpt::Level OL);
 };
 
 } // end namespace llvm

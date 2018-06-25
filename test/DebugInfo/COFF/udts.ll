@@ -18,39 +18,37 @@ target triple = "i686-pc-windows-msvc18.0.0"
 ; typedef struct { int x; } U;
 ; U u;
 
-; CHECK:      {{.*}}Proc{{.*}}Sym {
+; CHECK:      ProcStart {
 ; CHECK:        DisplayName: f
 ; CHECK:        LinkageName: ?f@@YAXXZ
 ; CHECK:      }
-; CHECK:      UDTSym {
-; CHECK-NEXT:   Kind: S_UDT (0x1108)
+; CHECK:      UDT {
 ; CHECK-NEXT:   Type: int (0x74)
 ; CHECK-NEXT:   UDTName: f::FOO
 ; CHECK-NEXT: }
 ; CHECK-NEXT: ProcEnd {
+; CHECK-NEXT: }
 
-; CHECK:      {{.*}}Proc{{.*}}Sym {
+; CHECK:      ProcStart {
 ; CHECK:        DisplayName: g
 ; CHECK:        LinkageName: ?g@@YAMPEAUS@@@Z
 ; CHECK:      }
-; CHECK:      UDTSym {
-; CHECK-NEXT:   Kind: S_UDT (0x1108)
+; CHECK:      UDT {
 ; CHECK-NEXT:   Type: g::pun (0x{{[0-9A-F]+}})
 ; CHECK-NEXT:   UDTName: g::pun
 ; CHECK-NEXT: }
 ; CHECK-NEXT: ProcEnd {
+; CHECK-NEXT: }
 
 ; CHECK:      Subsection
-; CHECK-NOT:  {{.*}}Proc{{.*}}Sym
-; CHECK:      UDTSym {
-; CHECK-NEXT:   Kind: S_UDT (0x1108)
+; CHECK-NOT:  ProcStart
+; CHECK:      UDT {
 ; CHECK-NEXT: Type: S (0x{{[0-9A-F]+}})
 ; CHECK-NEXT: UDTName: S
-; CHECK:      UDTSym {
-; CHECK-NEXT:   Kind: S_UDT (0x1108)
+; CHECK:      UDT {
 ; CHECK-NEXT: Type: <unnamed-tag> (0x{{[0-9A-F]+}})
 ; CHECK-NEXT: UDTName: U
-; CHECK-NOT: UDTSym {
+; CHECK-NOT: UDT {
 
 %struct.U = type { i32 }
 %struct.S = type { i32 }
@@ -94,7 +92,7 @@ attributes #1 = { nounwind readnone }
 !llvm.module.flags = !{!11, !12, !13}
 !llvm.ident = !{!14}
 
-!0 = distinct !DIGlobalVariableExpression(var: !1, expr: !DIExpression())
+!0 = distinct !DIGlobalVariableExpression(var: !1)
 !1 = !DIGlobalVariable(name: "u", linkageName: "\01?u@@3UU@@A", scope: !2, file: !3, line: 13, type: !6, isLocal: false, isDefinition: true)
 !2 = distinct !DICompileUnit(language: DW_LANG_C_plus_plus, file: !3, producer: "clang version 3.9.0 ", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !4, globals: !5)
 !3 = !DIFile(filename: "t.cpp", directory: "D:\5Csrc\5Cllvm\5Cbuild")

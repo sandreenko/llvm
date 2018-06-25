@@ -197,7 +197,8 @@ public:
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                         const MCFragment *Fragment, const MCFixup &Fixup,
-                        MCValue Target, uint64_t &FixedValue) override;
+                        MCValue Target, bool &IsPCRel,
+                        uint64_t &FixedValue) override;
 
   void createFileSymbols(MCAssembler &Asm);
   void assignSectionNumbers();
@@ -707,11 +708,9 @@ bool WinCOFFObjectWriter::isSymbolRefDifferenceFullyResolvedImpl(
                                                                 InSet, IsPCRel);
 }
 
-void WinCOFFObjectWriter::recordRelocation(MCAssembler &Asm,
-                                           const MCAsmLayout &Layout,
-                                           const MCFragment *Fragment,
-                                           const MCFixup &Fixup, MCValue Target,
-                                           uint64_t &FixedValue) {
+void WinCOFFObjectWriter::recordRelocation(
+    MCAssembler &Asm, const MCAsmLayout &Layout, const MCFragment *Fragment,
+    const MCFixup &Fixup, MCValue Target, bool &IsPCRel, uint64_t &FixedValue) {
   assert(Target.getSymA() && "Relocation must reference a symbol!");
 
   const MCSymbol &A = Target.getSymA()->getSymbol();
@@ -736,6 +735,7 @@ void WinCOFFObjectWriter::recordRelocation(MCAssembler &Asm,
 
   COFFSection *Sec = SectionMap[MCSec];
   const MCSymbolRefExpr *SymB = Target.getSymB();
+  bool CrossSection = false;
 
   if (SymB) {
     const MCSymbol *B = &SymB->getSymbol();
@@ -747,8 +747,27 @@ void WinCOFFObjectWriter::recordRelocation(MCAssembler &Asm,
       return;
     }
 
+    if (!A.getFragment()) {
+      Asm.getContext().reportError(
+          Fixup.getLoc(),
+          Twine("symbol '") + A.getName() +
+              "' can not be undefined in a subtraction expression");
+      return;
+    }
+
+    CrossSection = &A.getSection() != &B->getSection();
+
     // Offset of the symbol in the section
     int64_t OffsetOfB = Layout.getSymbolOffset(*B);
+
+    // In the case where we have SymbA and SymB, we just need to store the delta
+    // between the two symbols.  Update FixedValue to account for the delta, and
+    // skip recording the relocation.
+    if (!CrossSection) {
+      int64_t OffsetOfA = Layout.getSymbolOffset(A);
+      FixedValue = (OffsetOfA - OffsetOfB) + Target.getConstant();
+      return;
+    }
 
     // Offset of the relocation in the section
     int64_t OffsetOfRelocation =
@@ -765,7 +784,7 @@ void WinCOFFObjectWriter::recordRelocation(MCAssembler &Asm,
   Reloc.Data.VirtualAddress = Layout.getFragmentOffset(Fragment);
 
   // Turn relocations for temporary symbols into section relocations.
-  if (A.isTemporary()) {
+  if (A.isTemporary() || CrossSection) {
     MCSection *TargetSection = &A.getSection();
     assert(
         SectionMap.find(TargetSection) != SectionMap.end() &&
@@ -783,7 +802,7 @@ void WinCOFFObjectWriter::recordRelocation(MCAssembler &Asm,
 
   Reloc.Data.VirtualAddress += Fixup.getOffset();
   Reloc.Data.Type = TargetObjectWriter->getRelocType(
-      Asm.getContext(), Target, Fixup, SymB, Asm.getBackend());
+      Target, Fixup, CrossSection, Asm.getBackend());
 
   // FIXME: Can anyone explain what this does other than adjust for the size
   // of the offset?

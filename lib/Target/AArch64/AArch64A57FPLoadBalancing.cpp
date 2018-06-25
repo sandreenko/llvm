@@ -509,7 +509,7 @@ int AArch64A57FPLoadBalancing::scavengeRegister(Chain *G, Color C,
   assert(ChainBegin != ChainEnd && "Chain should contain instructions");
   do {
     --I;
-    Units.accumulate(*I);
+    Units.accumulateBackward(*I);
   } while (I != ChainBegin);
 
   // Make sure we allocate in-order, to get the cheapest registers first.

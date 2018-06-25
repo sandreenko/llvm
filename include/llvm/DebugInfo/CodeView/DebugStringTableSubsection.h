@@ -12,15 +12,17 @@
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/Support/BinaryStreamRef.h"
 #include "llvm/Support/Error.h"
-#include <cstdint>
+
+#include <stdint.h>
 
 namespace llvm {
 
 class BinaryStreamReader;
+class BinaryStreamRef;
+class BinaryStreamWriter;
 
 namespace codeview {
 
@@ -81,9 +83,7 @@ private:
   StringMap<uint32_t> Strings;
   uint32_t StringSize = 1;
 };
+}
+}
 
-} // end namespace codeview
-
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_DEBUGSTRINGTABLESUBSECTION_H
+#endif

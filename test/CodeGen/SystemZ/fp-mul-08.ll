@@ -1,15 +1,11 @@
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z10 \
-; RUN:   | FileCheck -check-prefix=CHECK -check-prefix=CHECK-SCALAR %s
-; RUN: llc < %s -mtriple=s390x-linux-gnu -mcpu=z14 \
-; RUN:   | FileCheck -check-prefix=CHECK -check-prefix=CHECK-VECTOR %s
+; RUN: llc < %s -mtriple=s390x-linux-gnu | FileCheck %s
 
 declare float @llvm.fma.f32(float %f1, float %f2, float %f3)
 
 define float @f1(float %f1, float %f2, float %acc) {
 ; CHECK-LABEL: f1:
-; CHECK-SCALAR: msebr %f4, %f0, %f2
-; CHECK-SCALAR: ler %f0, %f4
-; CHECK-VECTOR: wfmssb %f0, %f0, %f2, %f4
+; CHECK: msebr %f4, %f0, %f2
+; CHECK: ler %f0, %f4
 ; CHECK: br %r14
   %negacc = fsub float -0.0, %acc
   %res = call float @llvm.fma.f32 (float %f1, float %f2, float %negacc)
@@ -19,8 +15,7 @@ define float @f1(float %f1, float %f2, float %acc) {
 define float @f2(float %f1, float *%ptr, float %acc) {
 ; CHECK-LABEL: f2:
 ; CHECK: mseb %f2, %f0, 0(%r2)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %f2 = load float , float *%ptr
   %negacc = fsub float -0.0, %acc
@@ -31,8 +26,7 @@ define float @f2(float %f1, float *%ptr, float %acc) {
 define float @f3(float %f1, float *%base, float %acc) {
 ; CHECK-LABEL: f3:
 ; CHECK: mseb %f2, %f0, 4092(%r2)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %ptr = getelementptr float, float *%base, i64 1023
   %f2 = load float , float *%ptr
@@ -48,8 +42,7 @@ define float @f4(float %f1, float *%base, float %acc) {
 ; CHECK-LABEL: f4:
 ; CHECK: aghi %r2, 4096
 ; CHECK: mseb %f2, %f0, 0(%r2)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %ptr = getelementptr float, float *%base, i64 1024
   %f2 = load float , float *%ptr
@@ -65,8 +58,7 @@ define float @f5(float %f1, float *%base, float %acc) {
 ; CHECK-LABEL: f5:
 ; CHECK: aghi %r2, -4
 ; CHECK: mseb %f2, %f0, 0(%r2)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %ptr = getelementptr float, float *%base, i64 -1
   %f2 = load float , float *%ptr
@@ -79,8 +71,7 @@ define float @f6(float %f1, float *%base, i64 %index, float %acc) {
 ; CHECK-LABEL: f6:
 ; CHECK: sllg %r1, %r3, 2
 ; CHECK: mseb %f2, %f0, 0(%r1,%r2)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %ptr = getelementptr float, float *%base, i64 %index
   %f2 = load float , float *%ptr
@@ -93,8 +84,7 @@ define float @f7(float %f1, float *%base, i64 %index, float %acc) {
 ; CHECK-LABEL: f7:
 ; CHECK: sllg %r1, %r3, 2
 ; CHECK: mseb %f2, %f0, 4092({{%r1,%r2|%r2,%r1}})
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %index2 = add i64 %index, 1023
   %ptr = getelementptr float, float *%base, i64 %index2
@@ -109,8 +99,7 @@ define float @f8(float %f1, float *%base, i64 %index, float %acc) {
 ; CHECK: sllg %r1, %r3, 2
 ; CHECK: lay %r1, 4096({{%r1,%r2|%r2,%r1}})
 ; CHECK: mseb %f2, %f0, 0(%r1)
-; CHECK-SCALAR: ler %f0, %f2
-; CHECK-VECTOR: ldr %f0, %f2
+; CHECK: ler %f0, %f2
 ; CHECK: br %r14
   %index2 = add i64 %index, 1024
   %ptr = getelementptr float, float *%base, i64 %index2

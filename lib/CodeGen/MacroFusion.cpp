@@ -1,4 +1,4 @@
-//===- MacroFusion.cpp - Macro Fusion -------------------------------------===//
+//===- MacroFusion.cpp - Macro Fusion ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -13,18 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/MacroFusion.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineScheduler.h"
-#include "llvm/CodeGen/ScheduleDAG.h"
-#include "llvm/CodeGen/ScheduleDAGMutation.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 
-#define DEBUG_TYPE "machine-scheduler"
+#define DEBUG_TYPE "misched"
 
 STATISTIC(NumFused, "Number of instr pairs fused");
 
@@ -32,6 +25,8 @@ using namespace llvm;
 
 static cl::opt<bool> EnableMacroFusion("misched-fusion", cl::Hidden,
   cl::desc("Enable scheduling for macro fusion."), cl::init(true));
+
+namespace {
 
 static void fuseInstructionPair(ScheduleDAGMI &DAG, SUnit &FirstSU,
                                 SUnit &SecondSU) {
@@ -71,7 +66,6 @@ static void fuseInstructionPair(ScheduleDAGMI &DAG, SUnit &FirstSU,
   ++NumFused;
 }
 
-namespace {
 
 /// \brief Post-process the DAG to create cluster edges between instrs that may
 /// be fused by the processor into a single operation.
@@ -86,8 +80,6 @@ public:
 
   void apply(ScheduleDAGInstrs *DAGInstrs) override;
 };
-
-} // end anonymous namespace
 
 void MacroFusion::apply(ScheduleDAGInstrs *DAGInstrs) {
   ScheduleDAGMI *DAG = static_cast<ScheduleDAGMI*>(DAGInstrs);
@@ -136,18 +128,23 @@ bool MacroFusion::scheduleAdjacentImpl(ScheduleDAGMI &DAG, SUnit &AnchorSU) {
   return false;
 }
 
+} // end anonymous namespace
+
+
+namespace llvm {
+
 std::unique_ptr<ScheduleDAGMutation>
-llvm::createMacroFusionDAGMutation(
-     ShouldSchedulePredTy shouldScheduleAdjacent) {
+createMacroFusionDAGMutation(ShouldSchedulePredTy shouldScheduleAdjacent) {
   if(EnableMacroFusion)
     return llvm::make_unique<MacroFusion>(shouldScheduleAdjacent, true);
   return nullptr;
 }
 
 std::unique_ptr<ScheduleDAGMutation>
-llvm::createBranchMacroFusionDAGMutation(
-     ShouldSchedulePredTy shouldScheduleAdjacent) {
+createBranchMacroFusionDAGMutation(ShouldSchedulePredTy shouldScheduleAdjacent) {
   if(EnableMacroFusion)
     return llvm::make_unique<MacroFusion>(shouldScheduleAdjacent, false);
   return nullptr;
 }
+
+} // end namespace llvm

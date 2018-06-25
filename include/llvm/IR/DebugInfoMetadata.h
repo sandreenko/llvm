@@ -435,10 +435,10 @@ public:
 
   /// Return the raw underlying file.
   ///
-  /// A \a DIFile is a \a DIScope, but it doesn't point at a separate file (it
-  /// \em is the file).  If \c this is an \a DIFile, we need to return \c this.
-  /// Otherwise, return the first operand, which is where all other subclasses
-  /// store their file pointer.
+  /// A \a DIFile is a \a DIScope, but it doesn't point at a separate file
+  /// (it\em is the file).  If \c this is an \a DIFile, we need to return \c
+  /// this.  Otherwise, return the first operand, which is where all other
+  /// subclasses store their file pointer.
   Metadata *getRawFile() const {
     return isa<DIFile>(this) ? const_cast<DIScope *>(this)
                              : static_cast<Metadata *>(getOperand(0));
@@ -2293,18 +2293,6 @@ public:
   /// into a stack value.
   static DIExpression *prepend(const DIExpression *DIExpr, bool Deref,
                                int64_t Offset = 0, bool StackValue = false);
-
-  /// Create a DIExpression to describe one part of an aggregate variable that
-  /// is fragmented across multiple Values. The DW_OP_LLVM_fragment operation
-  /// will be appended to the elements of \c Expr. If \c Expr already contains
-  /// a \c DW_OP_LLVM_fragment \c OffsetInBits is interpreted as an offset
-  /// into the existing fragment.
-  ///
-  /// \param OffsetInBits Offset of the piece in bits.
-  /// \param SizeInBits   Size of the piece in bits.
-  static DIExpression *createFragmentExpression(const DIExpression *Exp,
-                                                unsigned OffsetInBits,
-                                                unsigned SizeInBits);
 };
 
 /// Global variables.
@@ -2563,32 +2551,32 @@ class DIImportedEntity : public DINode {
 
   static DIImportedEntity *getImpl(LLVMContext &Context, unsigned Tag,
                                    DIScope *Scope, DINodeRef Entity,
-                                   DIFile *File, unsigned Line, StringRef Name,
+                                   unsigned Line, StringRef Name,
                                    StorageType Storage,
                                    bool ShouldCreate = true) {
-    return getImpl(Context, Tag, Scope, Entity, File, Line,
+    return getImpl(Context, Tag, Scope, Entity, Line,
                    getCanonicalMDString(Context, Name), Storage, ShouldCreate);
   }
   static DIImportedEntity *getImpl(LLVMContext &Context, unsigned Tag,
                                    Metadata *Scope, Metadata *Entity,
-                                   Metadata *File, unsigned Line,
-                                   MDString *Name, StorageType Storage,
+                                   unsigned Line, MDString *Name,
+                                   StorageType Storage,
                                    bool ShouldCreate = true);
 
   TempDIImportedEntity cloneImpl() const {
     return getTemporary(getContext(), getTag(), getScope(), getEntity(),
-                        getFile(), getLine(), getName());
+                        getLine(), getName());
   }
 
 public:
   DEFINE_MDNODE_GET(DIImportedEntity,
                     (unsigned Tag, DIScope *Scope, DINodeRef Entity,
-                     DIFile *File, unsigned Line, StringRef Name = ""),
-                    (Tag, Scope, Entity, File, Line, Name))
+                     unsigned Line, StringRef Name = ""),
+                    (Tag, Scope, Entity, Line, Name))
   DEFINE_MDNODE_GET(DIImportedEntity,
                     (unsigned Tag, Metadata *Scope, Metadata *Entity,
-                     Metadata *File, unsigned Line, MDString *Name),
-                    (Tag, Scope, Entity, File, Line, Name))
+                     unsigned Line, MDString *Name),
+                    (Tag, Scope, Entity, Line, Name))
 
   TempDIImportedEntity clone() const { return cloneImpl(); }
 
@@ -2596,12 +2584,10 @@ public:
   DIScope *getScope() const { return cast_or_null<DIScope>(getRawScope()); }
   DINodeRef getEntity() const { return DINodeRef(getRawEntity()); }
   StringRef getName() const { return getStringOperand(2); }
-  DIFile *getFile() const { return cast_or_null<DIFile>(getRawFile()); }
 
   Metadata *getRawScope() const { return getOperand(0); }
   Metadata *getRawEntity() const { return getOperand(1); }
   MDString *getRawName() const { return getOperandAs<MDString>(2); }
-  Metadata *getRawFile() const { return getOperand(3); }
 
   static bool classof(const Metadata *MD) {
     return MD->getMetadataID() == DIImportedEntityKind;
@@ -2642,7 +2628,7 @@ public:
   Metadata *getRawExpression() const { return getOperand(1); }
 
   DIExpression *getExpression() const {
-    return cast<DIExpression>(getRawExpression());
+    return cast_or_null<DIExpression>(getRawExpression());
   }
 
   static bool classof(const Metadata *MD) {

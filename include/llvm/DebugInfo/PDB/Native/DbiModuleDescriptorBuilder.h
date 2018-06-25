@@ -47,7 +47,6 @@ public:
   DbiModuleDescriptorBuilder &
   operator=(const DbiModuleDescriptorBuilder &) = delete;
 
-  void setPdbFilePathNI(uint32_t NI);
   void setObjFileName(StringRef Name);
   void addSymbol(codeview::CVSymbol Symbol);
 
@@ -69,10 +68,6 @@ public:
 
   uint32_t calculateSerializedLength() const;
 
-  /// Return the offset within the module symbol stream of the next symbol
-  /// record passed to addSymbol. Add four to account for the signature.
-  uint32_t getNextSymbolOffset() const { return SymbolByteSize + 4; }
-
   void finalize();
   Error finalizeMsfLayout();
 
@@ -86,7 +81,6 @@ private:
   msf::MSFBuilder &MSF;
 
   uint32_t SymbolByteSize = 0;
-  uint32_t PdbFilePathNI = 0;
   std::string ModuleName;
   std::string ObjFileName;
   std::vector<std::string> SourceFiles;

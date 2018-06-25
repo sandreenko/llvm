@@ -28,7 +28,6 @@ class Instruction;
 class TargetLibraryInfo;
 class BasicBlock;
 class Function;
-class OptimizationRemarkEmitter;
 
 /// \brief This class implements simplifications for calls to fortified library
 /// functions (__st*cpy_chk, __memcpy_chk, __memmove_chk, __memset_chk), to,
@@ -74,7 +73,6 @@ private:
   FortifiedLibCallSimplifier FortifiedSimplifier;
   const DataLayout &DL;
   const TargetLibraryInfo *TLI;
-  OptimizationRemarkEmitter &ORE;
   bool UnsafeFPShrink;
   function_ref<void(Instruction *, Value *)> Replacer;
 
@@ -89,7 +87,6 @@ private:
 
 public:
   LibCallSimplifier(const DataLayout &DL, const TargetLibraryInfo *TLI,
-                    OptimizationRemarkEmitter &ORE,
                     function_ref<void(Instruction *, Value *)> Replacer =
                         &replaceAllUsesWithDefault);
 
@@ -137,9 +134,6 @@ private:
   Value *optimizeSqrt(CallInst *CI, IRBuilder<> &B);
   Value *optimizeSinCosPi(CallInst *CI, IRBuilder<> &B);
   Value *optimizeTan(CallInst *CI, IRBuilder<> &B);
-  // Wrapper for all floating point library call optimizations
-  Value *optimizeFloatingPointLibCall(CallInst *CI, LibFunc Func,
-                                      IRBuilder<> &B);
 
   // Integer Library Call Optimizations
   Value *optimizeFFS(CallInst *CI, IRBuilder<> &B);

@@ -1,4 +1,4 @@
-//===- MipsRegisterInfo.cpp - MIPS Register Information -------------------===//
+//===-- MipsRegisterInfo.cpp - MIPS Register Information -== --------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsRegisterInfo.h"
-#include "MCTargetDesc/MipsABIInfo.h"
 #include "Mips.h"
+#include "MipsInstrInfo.h"
 #include "MipsMachineFunction.h"
 #include "MipsSubtarget.h"
 #include "MipsTargetMachine.h"
@@ -21,17 +21,19 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/Function.h"
-#include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetFrameLowering.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
-#include <cstdint>
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
 
 using namespace llvm;
 
@@ -160,8 +162,7 @@ getReservedRegs(const MachineFunction &MF) const {
 
   BitVector Reserved(getNumRegs());
   const MipsSubtarget &Subtarget = MF.getSubtarget<MipsSubtarget>();
-
-  using RegIter = TargetRegisterClass::const_iterator;
+  typedef TargetRegisterClass::const_iterator RegIter;
 
   for (unsigned I = 0; I < array_lengthof(ReservedGPR32); ++I)
     Reserved.set(ReservedGPR32[I]);

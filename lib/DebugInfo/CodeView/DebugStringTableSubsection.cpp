@@ -1,4 +1,4 @@
-//===- DebugStringTableSubsection.cpp - CodeView String Table -------------===//
+//===- DebugStringTableSubsection.cpp - CodeView String Table ---*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,14 +8,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
+
+#include "llvm/Support/BinaryStream.h"
 #include "llvm/Support/BinaryStreamReader.h"
 #include "llvm/Support/BinaryStreamWriter.h"
-#include "llvm/Support/Error.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
 
 using namespace llvm;
 using namespace llvm::codeview;
@@ -27,7 +23,6 @@ Error DebugStringTableSubsectionRef::initialize(BinaryStreamRef Contents) {
   Stream = Contents;
   return Error::success();
 }
-
 Error DebugStringTableSubsectionRef::initialize(BinaryStreamReader &Reader) {
   return Reader.readStreamRef(Stream);
 }

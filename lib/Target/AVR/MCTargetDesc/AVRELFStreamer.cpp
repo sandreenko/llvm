@@ -33,7 +33,7 @@ static unsigned getEFlagsForFeatureSet(const FeatureBitset &Features) {
     EFlags |= ELF::EF_AVR_ARCH_AVR51;
   else if (Features[AVR::ELFArchAVR6])
     EFlags |= ELF::EF_AVR_ARCH_AVR6;
-  else if (Features[AVR::ELFArchTiny])
+  else if (Features[AVR::ELFArchAVRTiny])
     EFlags |= ELF::EF_AVR_ARCH_AVRTINY;
   else if (Features[AVR::ELFArchXMEGA1])
     EFlags |= ELF::EF_AVR_ARCH_XMEGA1;

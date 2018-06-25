@@ -3,7 +3,6 @@ set(LLVM_LINK_COMPONENTS
   AllTargetsDescs
   AllTargetsInfos
   Core
-  Demangle
   Object
   Support
   )

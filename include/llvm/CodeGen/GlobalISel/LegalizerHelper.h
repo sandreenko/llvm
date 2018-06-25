@@ -101,11 +101,11 @@ private:
   const LegalizerInfo &LI;
 };
 
-/// Helper function that creates the given libcall.
+/// Helper function that replaces \p MI with a libcall.
 LegalizerHelper::LegalizeResult
-createLibcall(MachineIRBuilder &MIRBuilder, RTLIB::Libcall Libcall,
-              const CallLowering::ArgInfo &Result,
-              ArrayRef<CallLowering::ArgInfo> Args);
+replaceWithLibcall(MachineInstr &MI, MachineIRBuilder &MIRBuilder,
+                   RTLIB::Libcall Libcall, const CallLowering::ArgInfo &Result,
+                   ArrayRef<CallLowering::ArgInfo> Args);
 
 } // End namespace llvm.
 

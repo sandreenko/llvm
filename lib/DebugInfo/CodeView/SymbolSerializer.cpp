@@ -1,4 +1,4 @@
-//===- SymbolSerializer.cpp -----------------------------------------------===//
+//===- SymbolSerializer.cpp -------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,20 +8,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/SymbolSerializer.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include <cassert>
-#include <cstdint>
-#include <cstring>
 
 using namespace llvm;
 using namespace llvm::codeview;
 
 SymbolSerializer::SymbolSerializer(BumpPtrAllocator &Allocator,
                                    CodeViewContainer Container)
-    : Storage(Allocator), Stream(RecordBuffer, support::little), Writer(Stream),
+    : Storage(Allocator), RecordBuffer(MaxRecordLength),
+      Stream(RecordBuffer, llvm::support::little), Writer(Stream),
       Mapping(Writer, Container) {}
 
 Error SymbolSerializer::visitSymbolBegin(CVSymbol &Record) {

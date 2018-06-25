@@ -390,10 +390,10 @@ class FastISelMap {
   std::map<OperandsSignature, std::vector<OperandsSignature> >
     SignaturesWithConstantForms;
 
-  StringRef InstNS;
+  std::string InstNS;
   ImmPredicateSet ImmediatePredicates;
 public:
-  explicit FastISelMap(StringRef InstNS);
+  explicit FastISelMap(std::string InstNS);
 
   void collectPatterns(CodeGenDAGPatterns &CGP);
   void printImmediatePredicates(raw_ostream &OS);
@@ -417,7 +417,7 @@ static std::string getLegalCName(std::string OpName) {
   return OpName;
 }
 
-FastISelMap::FastISelMap(StringRef instns) : InstNS(instns) {}
+FastISelMap::FastISelMap(std::string instns) : InstNS(std::move(instns)) {}
 
 static std::string PhyRegForNode(TreePatternNode *Op,
                                  const CodeGenTarget &Target) {
@@ -439,6 +439,10 @@ static std::string PhyRegForNode(TreePatternNode *Op,
 
 void FastISelMap::collectPatterns(CodeGenDAGPatterns &CGP) {
   const CodeGenTarget &Target = CGP.getTargetInfo();
+
+  // Determine the target's namespace name.
+  InstNS = Target.getInstNamespace() + "::";
+  assert(InstNS.size() > 2 && "Can't determine target-specific namespace!");
 
   // Scan through all the patterns and record the simple ones.
   for (CodeGenDAGPatterns::ptm_iterator I = CGP.ptm_begin(),
@@ -655,8 +659,8 @@ void FastISelMap::emitInstructionCode(raw_ostream &OS,
     if (Memo.SubRegNo.empty()) {
       Operands.PrintManglingSuffix(OS, *Memo.PhysRegs,
      ImmediatePredicates, true);
-      OS << "(" << InstNS << "::" << Memo.Name << ", ";
-      OS << "&" << InstNS << "::" << Memo.RC->getName() << "RegClass";
+      OS << "(" << InstNS << Memo.Name << ", ";
+      OS << "&" << InstNS << Memo.RC->getName() << "RegClass";
       if (!Operands.empty())
         OS << ", ";
       Operands.PrintArguments(OS, *Memo.PhysRegs);
@@ -869,8 +873,8 @@ void EmitFastISel(RecordKeeper &RK, raw_ostream &OS) {
                        Target.getName().str() + " target", OS);
 
   // Determine the target's namespace name.
-  StringRef InstNS = Target.getInstNamespace();
-  assert(!InstNS.empty() && "Can't determine target-specific namespace!");
+  std::string InstNS = Target.getInstNamespace() + "::";
+  assert(InstNS.size() > 2 && "Can't determine target-specific namespace!");
 
   FastISelMap F(InstNS);
   F.collectPatterns(CGP);

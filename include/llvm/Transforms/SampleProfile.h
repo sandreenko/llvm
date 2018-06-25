@@ -21,10 +21,6 @@ namespace llvm {
 class SampleProfileLoaderPass : public PassInfoMixin<SampleProfileLoaderPass> {
 public:
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM);
-  SampleProfileLoaderPass(std::string File = "") : ProfileFileName(File) {}
-
-private:
-  std::string ProfileFileName;
 };
 
 } // End llvm namespace

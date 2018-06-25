@@ -32,9 +32,8 @@ public:
       : MCAsmBackend(), OSABI(OSABI), Is64Bit(Is64Bit) {}
   ~RISCVAsmBackend() override {}
 
-  void applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                  const MCValue &Target, MutableArrayRef<char> Data,
-                  uint64_t Value, bool IsResolved) const override;
+  void applyFixup(const MCFixup &Fixup, MutableArrayRef<char> Data,
+                  uint64_t Value, bool IsPCRel, MCContext &Ctx) const override;
 
   MCObjectWriter *createObjectWriter(raw_pwrite_stream &OS) const override;
 
@@ -51,7 +50,7 @@ public:
   void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
                         MCInst &Res) const override {
 
-    report_fatal_error("RISCVAsmBackend::relaxInstruction() unimplemented");
+    llvm_unreachable("RISCVAsmBackend::relaxInstruction() unimplemented");
   }
 
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const override;
@@ -70,10 +69,9 @@ bool RISCVAsmBackend::writeNopData(uint64_t Count, MCObjectWriter *OW) const {
   return true;
 }
 
-void RISCVAsmBackend::applyFixup(const MCAssembler &Asm, const MCFixup &Fixup,
-                                 const MCValue &Target,
+void RISCVAsmBackend::applyFixup(const MCFixup &Fixup,
                                  MutableArrayRef<char> Data, uint64_t Value,
-                                 bool IsResolved) const {
+                                 bool IsPCRel, MCContext &Ctx) const {
   return;
 }
 

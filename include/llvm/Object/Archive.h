@@ -253,7 +253,7 @@ public:
   }
 
   // Cast methods.
-  static bool classof(Binary const *v) {
+  static inline bool classof(Binary const *v) {
     return v->isArchive();
   }
 

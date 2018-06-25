@@ -46,21 +46,13 @@ BasicBlock *llvm::CloneBasicBlock(const BasicBlock *BB, ValueToValueMapTy &VMap,
   if (BB->hasName()) NewBB->setName(BB->getName()+NameSuffix);
 
   bool hasCalls = false, hasDynamicAllocas = false, hasStaticAllocas = false;
-  Module *TheModule = F ? F->getParent() : nullptr;
-
+  
   // Loop over all instructions, and copy them over.
   for (BasicBlock::const_iterator II = BB->begin(), IE = BB->end();
        II != IE; ++II) {
 
-    if (DIFinder && TheModule) {
-      if (auto *DDI = dyn_cast<DbgDeclareInst>(II))
-        DIFinder->processDeclare(*TheModule, DDI);
-      else if (auto *DVI = dyn_cast<DbgValueInst>(II))
-        DIFinder->processValue(*TheModule, DVI);
-
-      if (auto DbgLoc = II->getDebugLoc())
-        DIFinder->processLocation(*TheModule, DbgLoc.get());
-    }
+    if (DIFinder && F->getParent() && II->getDebugLoc())
+      DIFinder->processLocation(*F->getParent(), II->getDebugLoc().get());
 
     Instruction *NewInst = II->clone();
     if (II->hasName())
@@ -161,8 +153,6 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
   // When we remap instructions, we want to avoid duplicating inlined
   // DISubprograms, so record all subprograms we find as we duplicate
   // instructions and then freeze them in the MD map.
-  // We also record information about dbg.value and dbg.declare to avoid
-  // duplicating the types.
   DebugInfoFinder DIFinder;
 
   // Loop over all of the basic blocks in the function, cloning them as
@@ -201,10 +191,6 @@ void llvm::CloneFunctionInto(Function *NewFunc, const Function *OldFunc,
     if (ISP != SP) {
       VMap.MD()[ISP].reset(ISP);
     }
-  }
-
-  for (auto *Type : DIFinder.types()) {
-    VMap.MD()[Type].reset(Type);
   }
 
   // Loop over all of the instructions in the function, fixing up operand
@@ -341,9 +327,8 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
               SimplifyInstruction(NewInst, BB->getModule()->getDataLayout())) {
         // On the off-chance that this simplifies to an instruction in the old
         // function, map it back into the new function.
-        if (NewFunc != OldFunc)
-          if (Value *MappedV = VMap.lookup(V))
-            V = MappedV;
+        if (Value *MappedV = VMap.lookup(V))
+          V = MappedV;
 
         if (!NewInst->mayHaveSideEffects()) {
           VMap[&*II] = V;

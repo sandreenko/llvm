@@ -76,8 +76,8 @@ private:
     }
   };
 
-  using RangeColl = std::vector<Range>;
-  using RangeCollIterator = RangeColl::const_iterator;
+  typedef std::vector<Range>              RangeColl;
+  typedef RangeColl::const_iterator       RangeCollIterator;
 
   std::vector<RangeEndpoint> Endpoints;
   RangeColl Aranges;

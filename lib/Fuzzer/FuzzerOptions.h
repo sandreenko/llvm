@@ -32,7 +32,6 @@ struct FuzzingOptions {
   bool UseCmp = false;
   bool UseValueProfile = false;
   bool Shrink = false;
-  bool ReduceInputs = false;
   int ReloadIntervalSec = 1;
   bool ShuffleAtStartUp = true;
   bool PreferSmall = true;

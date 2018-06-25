@@ -12,11 +12,7 @@
 #ifndef LLVM_ANALYSIS_REGIONINFOIMPL_H
 #define LLVM_ANALYSIS_REGIONINFOIMPL_H
 
-#include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/PostOrderIterator.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/iterator_range.h"
 #include "llvm/Analysis/DominanceFrontier.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -24,19 +20,13 @@
 #include "llvm/Analysis/RegionIterator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
 #include <algorithm>
-#include <cassert>
 #include <iterator>
-#include <memory>
 #include <set>
-#include <string>
-#include <type_traits>
-#include <vector>
-
-#define DEBUG_TYPE "region"
 
 namespace llvm {
+
+#define DEBUG_TYPE "region"
 
 //===----------------------------------------------------------------------===//
 /// RegionBase Implementation
@@ -313,8 +303,7 @@ RegionBase<Tr>::element_end() const {
 
 template <class Tr>
 typename Tr::RegionT *RegionBase<Tr>::getSubRegionNode(BlockT *BB) const {
-  using RegionT = typename Tr::RegionT;
-
+  typedef typename Tr::RegionT RegionT;
   RegionT *R = RI->getRegionFor(BB);
 
   if (!R || R == this)
@@ -341,8 +330,7 @@ typename Tr::RegionNodeT *RegionBase<Tr>::getBBNode(BlockT *BB) const {
   if (at == BBNodeMap.end()) {
     auto Deconst = const_cast<RegionBase<Tr> *>(this);
     typename BBNodeMapT::value_type V = {
-        BB,
-        llvm::make_unique<RegionNodeT>(static_cast<RegionT *>(Deconst), BB)};
+        BB, make_unique<RegionNodeT>(static_cast<RegionT *>(Deconst), BB)};
     at = BBNodeMap.insert(std::move(V)).first;
   }
   return at->second.get();
@@ -369,10 +357,10 @@ void RegionBase<Tr>::transferChildrenTo(RegionT *To) {
 template <class Tr>
 void RegionBase<Tr>::addSubRegion(RegionT *SubRegion, bool moveChildren) {
   assert(!SubRegion->parent && "SubRegion already has a parent!");
-  assert(llvm::find_if(*this,
-                       [&](const std::unique_ptr<RegionT> &R) {
-                         return R.get() == SubRegion;
-                       }) == children.end() &&
+  assert(find_if(*this,
+                 [&](const std::unique_ptr<RegionT> &R) {
+                   return R.get() == SubRegion;
+                 }) == children.end() &&
          "Subregion already exists!");
 
   SubRegion->parent = static_cast<RegionT *>(this);
@@ -414,7 +402,7 @@ typename Tr::RegionT *RegionBase<Tr>::removeSubRegion(RegionT *Child) {
   assert(Child->parent == this && "Child is not a child of this region!");
   Child->parent = nullptr;
   typename RegionSet::iterator I =
-      llvm::find_if(children, [&](const std::unique_ptr<RegionT> &R) {
+      find_if(children, [&](const std::unique_ptr<RegionT> &R) {
         return R.get() == Child;
       });
   assert(I != children.end() && "Region does not exit. Unable to remove.");
@@ -517,7 +505,8 @@ void RegionBase<Tr>::clearNodeCache() {
 //
 
 template <class Tr>
-RegionInfoBase<Tr>::RegionInfoBase() = default;
+RegionInfoBase<Tr>::RegionInfoBase()
+    : TopLevelRegion(nullptr) {}
 
 template <class Tr>
 RegionInfoBase<Tr>::~RegionInfoBase() {
@@ -554,8 +543,7 @@ bool RegionInfoBase<Tr>::isCommonDomFrontier(BlockT *BB, BlockT *entry,
 template <class Tr>
 bool RegionInfoBase<Tr>::isRegion(BlockT *entry, BlockT *exit) const {
   assert(entry && exit && "entry and exit must not be null!");
-
-  using DST = typename DomFrontierT::DomSetType;
+  typedef typename DomFrontierT::DomSetType DST;
 
   DST *entrySuccs = &DF->find(entry)->second;
 
@@ -701,8 +689,7 @@ void RegionInfoBase<Tr>::findRegionsWithEntry(BlockT *entry,
 
 template <class Tr>
 void RegionInfoBase<Tr>::scanForRegions(FuncT &F, BBtoBBMap *ShortCut) {
-  using FuncPtrT = typename std::add_pointer<FuncT>::type;
-
+  typedef typename std::add_pointer<FuncT>::type FuncPtrT;
   BlockT *entry = GraphTraits<FuncPtrT>::getEntryNode(&F);
   DomTreeNodeT *N = DT->getNode(entry);
 
@@ -889,7 +876,7 @@ RegionInfoBase<Tr>::getCommonRegion(SmallVectorImpl<BlockT *> &BBs) const {
 
 template <class Tr>
 void RegionInfoBase<Tr>::calculate(FuncT &F) {
-  using FuncPtrT = typename std::add_pointer<FuncT>::type;
+  typedef typename std::add_pointer<FuncT>::type FuncPtrT;
 
   // ShortCut a function where for every BB the exit of the largest region
   // starting with BB is stored. These regions can be threated as single BBS.
@@ -901,8 +888,8 @@ void RegionInfoBase<Tr>::calculate(FuncT &F) {
   buildRegionsTree(DT->getNode(BB), TopLevelRegion);
 }
 
-} // end namespace llvm
-
 #undef DEBUG_TYPE
 
-#endif // LLVM_ANALYSIS_REGIONINFOIMPL_H
+} // end namespace llvm
+
+#endif

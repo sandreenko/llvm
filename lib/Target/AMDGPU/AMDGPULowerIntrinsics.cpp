@@ -10,7 +10,6 @@
 #include "AMDGPU.h"
 #include "AMDGPUSubtarget.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -35,13 +34,8 @@ public:
   AMDGPULowerIntrinsics() : ModulePass(ID) {}
 
   bool runOnModule(Module &M) override;
-  bool expandMemIntrinsicUses(Function &F);
   StringRef getPassName() const override {
     return "AMDGPU Lower Intrinsics";
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<TargetTransformInfoWrapperPass>();
   }
 };
 
@@ -61,7 +55,7 @@ static bool shouldExpandOperationWithSize(Value *Size) {
   return !CI || (CI->getZExtValue() > MaxStaticSize);
 }
 
-bool AMDGPULowerIntrinsics::expandMemIntrinsicUses(Function &F) {
+static bool expandMemIntrinsicUses(Function &F) {
   Intrinsic::ID ID = F.getIntrinsicID();
   bool Changed = false;
 
@@ -73,10 +67,7 @@ bool AMDGPULowerIntrinsics::expandMemIntrinsicUses(Function &F) {
     case Intrinsic::memcpy: {
       auto *Memcpy = cast<MemCpyInst>(Inst);
       if (shouldExpandOperationWithSize(Memcpy->getLength())) {
-        Function *ParentFunc = Memcpy->getParent()->getParent();
-        const TargetTransformInfo &TTI =
-            getAnalysis<TargetTransformInfoWrapperPass>().getTTI(*ParentFunc);
-        expandMemCpyAsLoop(Memcpy, TTI);
+        expandMemCpyAsLoop(Memcpy);
         Changed = true;
         Memcpy->eraseFromParent();
       }

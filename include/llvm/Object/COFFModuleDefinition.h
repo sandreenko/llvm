@@ -16,6 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+
 #ifndef LLVM_OBJECT_COFF_MODULE_DEFINITION_H
 #define LLVM_OBJECT_COFF_MODULE_DEFINITION_H
 
@@ -28,7 +29,6 @@ namespace object {
 struct COFFModuleDefinition {
   std::vector<COFFShortExport> Exports;
   std::string OutputFile;
-  std::string ImportName;
   uint64_t ImageBase = 0;
   uint64_t StackReserve = 0;
   uint64_t StackCommit = 0;
@@ -40,12 +40,8 @@ struct COFFModuleDefinition {
   uint32_t MinorOSVersion = 0;
 };
 
-// mingw and wine def files do not mangle _ for x86 which
-// is a consequence of legacy binutils' dlltool functionality.
-// This MingwDef flag should be removed once mingw stops this pratice.
 Expected<COFFModuleDefinition>
-parseCOFFModuleDefinition(MemoryBufferRef MB, COFF::MachineTypes Machine,
-                          bool MingwDef = false);
+parseCOFFModuleDefinition(MemoryBufferRef MB, COFF::MachineTypes Machine);
 
 } // End namespace object.
 } // End namespace llvm.

@@ -33,8 +33,8 @@ static bool shouldScheduleAdjacent(const TargetInstrInfo &TII,
 
   // Assume wildcards for unspecified instrs.
   unsigned FirstOpcode =
-      FirstMI ? FirstMI->getOpcode()
-              : static_cast<unsigned>(AArch64::INSTRUCTION_LIST_END);
+    FirstMI ? FirstMI->getOpcode()
+	    : static_cast<unsigned>(AArch64::INSTRUCTION_LIST_END);
   unsigned SecondOpcode = SecondMI.getOpcode();
 
   if (ST.hasArithmeticBccFusion())
@@ -118,13 +118,11 @@ static bool shouldScheduleAdjacent(const TargetInstrInfo &TII,
     // Fuse AES crypto operations.
     switch(SecondOpcode) {
     // AES encode.
-    case AArch64::AESMCrr:
-    case AArch64::AESMCrrTied:
+    case AArch64::AESMCrr :
       return FirstOpcode == AArch64::AESErr ||
              FirstOpcode == AArch64::INSTRUCTION_LIST_END;
     // AES decode.
     case AArch64::AESIMCrr:
-    case AArch64::AESIMCrrTied:
       return FirstOpcode == AArch64::AESDrr ||
              FirstOpcode == AArch64::INSTRUCTION_LIST_END;
     }

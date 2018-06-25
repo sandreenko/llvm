@@ -25,7 +25,7 @@ using namespace llvm;
 
 OptimizationRemarkEmitter::OptimizationRemarkEmitter(const Function *F)
     : F(F), BFI(nullptr) {
-  if (!F->getContext().getDiagnosticsHotnessRequested())
+  if (!F->getContext().getDiagnosticHotnessRequested())
     return;
 
   // First create a dominator tree.
@@ -155,18 +155,10 @@ void OptimizationRemarkEmitter::emit(
     DiagnosticInfoOptimizationBase &OptDiagBase) {
   auto &OptDiag = cast<DiagnosticInfoIROptimization>(OptDiagBase);
   computeHotness(OptDiag);
-  // If a diagnostic has a hotness value, then only emit it if its hotness
-  // meets the threshold.
-  if (OptDiag.getHotness() &&
-      *OptDiag.getHotness() <
-          F->getContext().getDiagnosticsHotnessThreshold()) {
-    return;
-  }
 
   yaml::Output *Out = F->getContext().getDiagnosticsOutputFile();
   if (Out) {
-    // For remarks the << operator takes a reference to a pointer.
-    auto *P = &OptDiagBase;
+    auto *P = const_cast<DiagnosticInfoOptimizationBase *>(&OptDiagBase);
     *Out << P;
   }
   // FIXME: now that IsVerbose is part of DI, filtering for this will be moved
@@ -184,7 +176,7 @@ OptimizationRemarkEmitterWrapperPass::OptimizationRemarkEmitterWrapperPass()
 bool OptimizationRemarkEmitterWrapperPass::runOnFunction(Function &Fn) {
   BlockFrequencyInfo *BFI;
 
-  if (Fn.getContext().getDiagnosticsHotnessRequested())
+  if (Fn.getContext().getDiagnosticHotnessRequested())
     BFI = &getAnalysis<LazyBlockFrequencyInfoPass>().getBFI();
   else
     BFI = nullptr;
@@ -206,7 +198,7 @@ OptimizationRemarkEmitterAnalysis::run(Function &F,
                                        FunctionAnalysisManager &AM) {
   BlockFrequencyInfo *BFI;
 
-  if (F.getContext().getDiagnosticsHotnessRequested())
+  if (F.getContext().getDiagnosticHotnessRequested())
     BFI = &AM.getResult<BlockFrequencyAnalysis>(F);
   else
     BFI = nullptr;

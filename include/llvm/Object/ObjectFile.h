@@ -313,7 +313,7 @@ public:
     return createObjectFile(Object, llvm::file_magic::unknown);
   }
 
-  static bool classof(const Binary *v) {
+  static inline bool classof(const Binary *v) {
     return v->isObject();
   }
 

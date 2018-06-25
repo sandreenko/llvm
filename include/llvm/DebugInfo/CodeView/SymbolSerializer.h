@@ -1,4 +1,4 @@
-//===- SymbolSerializer.h ---------------------------------------*- C++ -*-===//
+//===- symbolSerializer.h ---------------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -10,28 +10,26 @@
 #ifndef LLVM_DEBUGINFO_CODEVIEW_SYMBOLSERIALIZER_H
 #define LLVM_DEBUGINFO_CODEVIEW_SYMBOLSERIALIZER_H
 
-#include "llvm/ADT/Optional.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
-#include "llvm/DebugInfo/CodeView/RecordSerialization.h"
-#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
 #include "llvm/DebugInfo/CodeView/SymbolRecordMapping.h"
 #include "llvm/DebugInfo/CodeView/SymbolVisitorCallbacks.h"
+
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/BinaryByteStream.h"
 #include "llvm/Support/BinaryStreamWriter.h"
 #include "llvm/Support/Error.h"
-#include <cstdint>
-#include <vector>
 
 namespace llvm {
+class BinaryStreamWriter;
 namespace codeview {
 
 class SymbolSerializer : public SymbolVisitorCallbacks {
   BumpPtrAllocator &Storage;
-  // Since this is a fixed size buffer, use a stack allocated buffer.  This
-  // yields measurable performance increase over the repeated heap allocations
-  // when serializing many independent records via writeOneSymbol.
-  std::array<uint8_t, MaxRecordLength> RecordBuffer;
+  std::vector<uint8_t> RecordBuffer;
   MutableBinaryByteStream Stream;
   BinaryStreamWriter Writer;
   SymbolRecordMapping Mapping;
@@ -47,8 +45,6 @@ class SymbolSerializer : public SymbolVisitorCallbacks {
   }
 
 public:
-  SymbolSerializer(BumpPtrAllocator &Storage, CodeViewContainer Container);
-
   template <typename SymType>
   static CVSymbol writeOneSymbol(SymType &Sym, BumpPtrAllocator &Storage,
                                  CodeViewContainer Container) {
@@ -61,11 +57,13 @@ public:
     return Result;
   }
 
-  Error visitSymbolBegin(CVSymbol &Record) override;
-  Error visitSymbolEnd(CVSymbol &Record) override;
+  SymbolSerializer(BumpPtrAllocator &Storage, CodeViewContainer Container);
+
+  virtual Error visitSymbolBegin(CVSymbol &Record) override;
+  virtual Error visitSymbolEnd(CVSymbol &Record) override;
 
 #define SYMBOL_RECORD(EnumName, EnumVal, Name)                                 \
-  Error visitKnownRecord(CVSymbol &CVR, Name &Record) override {               \
+  virtual Error visitKnownRecord(CVSymbol &CVR, Name &Record) override {       \
     return visitKnownRecordImpl(CVR, Record);                                  \
   }
 #define SYMBOL_RECORD_ALIAS(EnumName, EnumVal, Name, AliasName)
@@ -77,8 +75,7 @@ private:
     return Mapping.visitKnownRecord(CVR, Record);
   }
 };
+}
+}
 
-} // end namespace codeview
-} // end namespace llvm
-
-#endif // LLVM_DEBUGINFO_CODEVIEW_SYMBOLSERIALIZER_H
+#endif

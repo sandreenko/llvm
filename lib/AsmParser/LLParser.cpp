@@ -643,18 +643,11 @@ bool LLParser::ParseNamedMetadata() {
   NamedMDNode *NMD = M->getOrInsertNamedMetadata(Name);
   if (Lex.getKind() != lltok::rbrace)
     do {
-      MDNode *N = nullptr;
-      // Parse DIExpressions inline as a special case. They are still MDNodes,
-      // so they can still appear in named metadata. Remove this logic if they
-      // become plain Metadata.
-      if (Lex.getKind() == lltok::MetadataVar &&
-          Lex.getStrVal() == "DIExpression") {
-        if (ParseDIExpression(N, /*IsDistinct=*/false))
-          return true;
-      } else if (ParseToken(lltok::exclaim, "Expected '!' here") ||
-                 ParseMDNodeID(N)) {
+      if (ParseToken(lltok::exclaim, "Expected '!' here"))
         return true;
-      }
+
+      MDNode *N = nullptr;
+      if (ParseMDNodeID(N)) return true;
       NMD->addOperand(N);
     } while (EatIfPresent(lltok::comma));
 
@@ -1128,7 +1121,6 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
       B.addAttribute(Attribute::SanitizeThread); break;
     case lltok::kw_sanitize_memory:
       B.addAttribute(Attribute::SanitizeMemory); break;
-    case lltok::kw_strictfp: B.addAttribute(Attribute::StrictFP); break;
     case lltok::kw_uwtable: B.addAttribute(Attribute::UWTable); break;
     case lltok::kw_writeonly: B.addAttribute(Attribute::WriteOnly); break;
 
@@ -1454,7 +1446,6 @@ bool LLParser::ParseOptionalParamAttrs(AttrBuilder &B) {
     case lltok::kw_sspreq:
     case lltok::kw_sspstrong:
     case lltok::kw_safestack:
-    case lltok::kw_strictfp:
     case lltok::kw_uwtable:
       HaveError |= Error(Lex.getLoc(), "invalid use of function-only attribute");
       break;
@@ -1546,7 +1537,6 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
     case lltok::kw_sspreq:
     case lltok::kw_sspstrong:
     case lltok::kw_safestack:
-    case lltok::kw_strictfp:
     case lltok::kw_uwtable:
       HaveError |= Error(Lex.getLoc(), "invalid use of function-only attribute");
       break;
@@ -1680,7 +1670,7 @@ void LLParser::ParseOptionalDLLStorageClass(unsigned &Res) {
 ///   ::= 'spir_func'
 ///   ::= 'spir_kernel'
 ///   ::= 'x86_64_sysvcc'
-///   ::= 'win64cc'
+///   ::= 'x86_64_win64cc'
 ///   ::= 'webkit_jscc'
 ///   ::= 'anyregcc'
 ///   ::= 'preserve_mostcc'
@@ -1722,7 +1712,7 @@ bool LLParser::ParseOptionalCallingConv(unsigned &CC) {
   case lltok::kw_spir_func:      CC = CallingConv::SPIR_FUNC; break;
   case lltok::kw_intel_ocl_bicc: CC = CallingConv::Intel_OCL_BI; break;
   case lltok::kw_x86_64_sysvcc:  CC = CallingConv::X86_64_SysV; break;
-  case lltok::kw_win64cc:        CC = CallingConv::Win64; break;
+  case lltok::kw_x86_64_win64cc: CC = CallingConv::X86_64_Win64; break;
   case lltok::kw_webkit_jscc:    CC = CallingConv::WebKit_JS; break;
   case lltok::kw_anyregcc:       CC = CallingConv::AnyReg; break;
   case lltok::kw_preserve_mostcc:CC = CallingConv::PreserveMost; break;
@@ -1929,42 +1919,20 @@ bool LLParser::parseAllocSizeArguments(unsigned &BaseSizeArg,
 }
 
 /// ParseScopeAndOrdering
-///   if isAtomic: ::= SyncScope? AtomicOrdering
+///   if isAtomic: ::= 'singlethread'? AtomicOrdering
 ///   else: ::=
 ///
 /// This sets Scope and Ordering to the parsed values.
-bool LLParser::ParseScopeAndOrdering(bool isAtomic, SyncScope::ID &SSID,
+bool LLParser::ParseScopeAndOrdering(bool isAtomic, SynchronizationScope &Scope,
                                      AtomicOrdering &Ordering) {
   if (!isAtomic)
     return false;
 
-  return ParseScope(SSID) || ParseOrdering(Ordering);
-}
+  Scope = CrossThread;
+  if (EatIfPresent(lltok::kw_singlethread))
+    Scope = SingleThread;
 
-/// ParseScope
-///   ::= syncscope("singlethread" | "<target scope>")?
-///
-/// This sets synchronization scope ID to the ID of the parsed value.
-bool LLParser::ParseScope(SyncScope::ID &SSID) {
-  SSID = SyncScope::System;
-  if (EatIfPresent(lltok::kw_syncscope)) {
-    auto StartParenAt = Lex.getLoc();
-    if (!EatIfPresent(lltok::lparen))
-      return Error(StartParenAt, "Expected '(' in syncscope");
-
-    std::string SSN;
-    auto SSNAt = Lex.getLoc();
-    if (ParseStringConstant(SSN))
-      return Error(SSNAt, "Expected synchronization scope name");
-
-    auto EndParenAt = Lex.getLoc();
-    if (!EatIfPresent(lltok::rparen))
-      return Error(EndParenAt, "Expected ')' in syncscope");
-
-    SSID = Context.getOrInsertSyncScopeID(SSN);
-  }
-
-  return false;
+  return ParseOrdering(Ordering);
 }
 
 /// ParseOrdering
@@ -3093,7 +3061,7 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
     } else {
       assert(Opc == Instruction::ICmp && "Unexpected opcode for CmpInst!");
       if (!Val0->getType()->isIntOrIntVectorTy() &&
-          !Val0->getType()->isPtrOrPtrVectorTy())
+          !Val0->getType()->getScalarType()->isPointerTy())
         return Error(ID.Loc, "icmp requires pointer or integer operands");
       ID.ConstantVal = ConstantExpr::getICmp(Pred, Val0, Val1);
     }
@@ -3242,7 +3210,7 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
 
     if (Opc == Instruction::GetElementPtr) {
       if (Elts.size() == 0 ||
-          !Elts[0]->getType()->isPtrOrPtrVectorTy())
+          !Elts[0]->getType()->getScalarType()->isPointerTy())
         return Error(ID.Loc, "base of getelementptr must be a pointer");
 
       Type *BaseType = Elts[0]->getType();
@@ -3258,7 +3226,7 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
       ArrayRef<Constant *> Indices(Elts.begin() + 1, Elts.end());
       for (Constant *Val : Indices) {
         Type *ValTy = Val->getType();
-        if (!ValTy->isIntOrIntVectorTy())
+        if (!ValTy->getScalarType()->isIntegerTy())
           return Error(ID.Loc, "getelementptr index must be an integer");
         if (ValTy->isVectorTy()) {
           unsigned ValNumEl = ValTy->getVectorNumElements();
@@ -4383,7 +4351,7 @@ bool LLParser::ParseDIGlobalVariableExpression(MDNode *&Result,
                                                bool IsDistinct) {
 #define VISIT_MD_FIELDS(OPTIONAL, REQUIRED)                                    \
   REQUIRED(var, MDField, );                                                    \
-  REQUIRED(expr, MDField, );
+  OPTIONAL(expr, MDField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
@@ -4421,15 +4389,13 @@ bool LLParser::ParseDIImportedEntity(MDNode *&Result, bool IsDistinct) {
   REQUIRED(tag, DwarfTagField, );                                              \
   REQUIRED(scope, MDField, );                                                  \
   OPTIONAL(entity, MDField, );                                                 \
-  OPTIONAL(file, MDField, );                                                   \
   OPTIONAL(line, LineField, );                                                 \
   OPTIONAL(name, MDStringField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
-  Result = GET_OR_DISTINCT(
-      DIImportedEntity,
-      (Context, tag.Val, scope.Val, entity.Val, file.Val, line.Val, name.Val));
+  Result = GET_OR_DISTINCT(DIImportedEntity, (Context, tag.Val, scope.Val,
+                                              entity.Val, line.Val, name.Val));
   return false;
 }
 
@@ -5731,7 +5697,7 @@ bool LLParser::ParseCompare(Instruction *&Inst, PerFunctionState &PFS,
   } else {
     assert(Opc == Instruction::ICmp && "Unknown opcode for CmpInst!");
     if (!LHS->getType()->isIntOrIntVectorTy() &&
-        !LHS->getType()->isPtrOrPtrVectorTy())
+        !LHS->getType()->getScalarType()->isPointerTy())
       return Error(Loc, "icmp requires integer operands");
     Inst = new ICmpInst(CmpInst::Predicate(Pred), LHS, RHS);
   }
@@ -6134,7 +6100,7 @@ int LLParser::ParseLoad(Instruction *&Inst, PerFunctionState &PFS) {
   bool AteExtraComma = false;
   bool isAtomic = false;
   AtomicOrdering Ordering = AtomicOrdering::NotAtomic;
-  SyncScope::ID SSID = SyncScope::System;
+  SynchronizationScope Scope = CrossThread;
 
   if (Lex.getKind() == lltok::kw_atomic) {
     isAtomic = true;
@@ -6152,7 +6118,7 @@ int LLParser::ParseLoad(Instruction *&Inst, PerFunctionState &PFS) {
   if (ParseType(Ty) ||
       ParseToken(lltok::comma, "expected comma after load's type") ||
       ParseTypeAndValue(Val, Loc, PFS) ||
-      ParseScopeAndOrdering(isAtomic, SSID, Ordering) ||
+      ParseScopeAndOrdering(isAtomic, Scope, Ordering) ||
       ParseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
@@ -6168,7 +6134,7 @@ int LLParser::ParseLoad(Instruction *&Inst, PerFunctionState &PFS) {
     return Error(ExplicitTypeLoc,
                  "explicit pointee type doesn't match operand's pointee type");
 
-  Inst = new LoadInst(Ty, Val, "", isVolatile, Alignment, Ordering, SSID);
+  Inst = new LoadInst(Ty, Val, "", isVolatile, Alignment, Ordering, Scope);
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
 
@@ -6183,7 +6149,7 @@ int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS) {
   bool AteExtraComma = false;
   bool isAtomic = false;
   AtomicOrdering Ordering = AtomicOrdering::NotAtomic;
-  SyncScope::ID SSID = SyncScope::System;
+  SynchronizationScope Scope = CrossThread;
 
   if (Lex.getKind() == lltok::kw_atomic) {
     isAtomic = true;
@@ -6199,7 +6165,7 @@ int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS) {
   if (ParseTypeAndValue(Val, Loc, PFS) ||
       ParseToken(lltok::comma, "expected ',' after store operand") ||
       ParseTypeAndValue(Ptr, PtrLoc, PFS) ||
-      ParseScopeAndOrdering(isAtomic, SSID, Ordering) ||
+      ParseScopeAndOrdering(isAtomic, Scope, Ordering) ||
       ParseOptionalCommaAlign(Alignment, AteExtraComma))
     return true;
 
@@ -6215,7 +6181,7 @@ int LLParser::ParseStore(Instruction *&Inst, PerFunctionState &PFS) {
       Ordering == AtomicOrdering::AcquireRelease)
     return Error(Loc, "atomic store cannot use Acquire ordering");
 
-  Inst = new StoreInst(Val, Ptr, isVolatile, Alignment, Ordering, SSID);
+  Inst = new StoreInst(Val, Ptr, isVolatile, Alignment, Ordering, Scope);
   return AteExtraComma ? InstExtraComma : InstNormal;
 }
 
@@ -6227,7 +6193,7 @@ int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   bool AteExtraComma = false;
   AtomicOrdering SuccessOrdering = AtomicOrdering::NotAtomic;
   AtomicOrdering FailureOrdering = AtomicOrdering::NotAtomic;
-  SyncScope::ID SSID = SyncScope::System;
+  SynchronizationScope Scope = CrossThread;
   bool isVolatile = false;
   bool isWeak = false;
 
@@ -6242,7 +6208,7 @@ int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
       ParseTypeAndValue(Cmp, CmpLoc, PFS) ||
       ParseToken(lltok::comma, "expected ',' after cmpxchg cmp operand") ||
       ParseTypeAndValue(New, NewLoc, PFS) ||
-      ParseScopeAndOrdering(true /*Always atomic*/, SSID, SuccessOrdering) ||
+      ParseScopeAndOrdering(true /*Always atomic*/, Scope, SuccessOrdering) ||
       ParseOrdering(FailureOrdering))
     return true;
 
@@ -6265,7 +6231,7 @@ int LLParser::ParseCmpXchg(Instruction *&Inst, PerFunctionState &PFS) {
   if (!New->getType()->isFirstClassType())
     return Error(NewLoc, "cmpxchg operand must be a first class value");
   AtomicCmpXchgInst *CXI = new AtomicCmpXchgInst(
-      Ptr, Cmp, New, SuccessOrdering, FailureOrdering, SSID);
+      Ptr, Cmp, New, SuccessOrdering, FailureOrdering, Scope);
   CXI->setVolatile(isVolatile);
   CXI->setWeak(isWeak);
   Inst = CXI;
@@ -6279,7 +6245,7 @@ int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   Value *Ptr, *Val; LocTy PtrLoc, ValLoc;
   bool AteExtraComma = false;
   AtomicOrdering Ordering = AtomicOrdering::NotAtomic;
-  SyncScope::ID SSID = SyncScope::System;
+  SynchronizationScope Scope = CrossThread;
   bool isVolatile = false;
   AtomicRMWInst::BinOp Operation;
 
@@ -6305,7 +6271,7 @@ int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
   if (ParseTypeAndValue(Ptr, PtrLoc, PFS) ||
       ParseToken(lltok::comma, "expected ',' after atomicrmw address") ||
       ParseTypeAndValue(Val, ValLoc, PFS) ||
-      ParseScopeAndOrdering(true /*Always atomic*/, SSID, Ordering))
+      ParseScopeAndOrdering(true /*Always atomic*/, Scope, Ordering))
     return true;
 
   if (Ordering == AtomicOrdering::Unordered)
@@ -6322,7 +6288,7 @@ int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
                          " integer");
 
   AtomicRMWInst *RMWI =
-    new AtomicRMWInst(Operation, Ptr, Val, Ordering, SSID);
+    new AtomicRMWInst(Operation, Ptr, Val, Ordering, Scope);
   RMWI->setVolatile(isVolatile);
   Inst = RMWI;
   return AteExtraComma ? InstExtraComma : InstNormal;
@@ -6332,8 +6298,8 @@ int LLParser::ParseAtomicRMW(Instruction *&Inst, PerFunctionState &PFS) {
 ///   ::= 'fence' 'singlethread'? AtomicOrdering
 int LLParser::ParseFence(Instruction *&Inst, PerFunctionState &PFS) {
   AtomicOrdering Ordering = AtomicOrdering::NotAtomic;
-  SyncScope::ID SSID = SyncScope::System;
-  if (ParseScopeAndOrdering(true /*Always atomic*/, SSID, Ordering))
+  SynchronizationScope Scope = CrossThread;
+  if (ParseScopeAndOrdering(true /*Always atomic*/, Scope, Ordering))
     return true;
 
   if (Ordering == AtomicOrdering::Unordered)
@@ -6341,7 +6307,7 @@ int LLParser::ParseFence(Instruction *&Inst, PerFunctionState &PFS) {
   if (Ordering == AtomicOrdering::Monotonic)
     return TokError("fence cannot be monotonic");
 
-  Inst = new FenceInst(Context, Ordering, SSID);
+  Inst = new FenceInst(Context, Ordering, Scope);
   return InstNormal;
 }
 
@@ -6383,7 +6349,7 @@ int LLParser::ParseGetElementPtr(Instruction *&Inst, PerFunctionState &PFS) {
       break;
     }
     if (ParseTypeAndValue(Val, EltLoc, PFS)) return true;
-    if (!Val->getType()->isIntOrIntVectorTy())
+    if (!Val->getType()->getScalarType()->isIntegerTy())
       return Error(EltLoc, "getelementptr index must be an integer");
 
     if (Val->getType()->isVectorTy()) {

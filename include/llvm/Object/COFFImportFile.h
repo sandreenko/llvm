@@ -33,7 +33,7 @@ public:
   COFFImportFile(MemoryBufferRef Source)
       : SymbolicFile(ID_COFFImportFile, Source) {}
 
-  static bool classof(Binary const *V) { return V->isCOFFImportFile(); }
+  static inline bool classof(Binary const *V) { return V->isCOFFImportFile(); }
 
   void moveSymbolNext(DataRefImpl &Symb) const override { ++Symb.p; }
 
@@ -73,7 +73,6 @@ private:
 struct COFFShortExport {
   std::string Name;
   std::string ExtName;
-  std::string SymbolName;
 
   uint16_t Ordinal = 0;
   bool Noname = false;
@@ -96,11 +95,10 @@ struct COFFShortExport {
   }
 };
 
-std::error_code writeImportLibrary(StringRef ImportName,
+std::error_code writeImportLibrary(StringRef DLLName,
                                    StringRef Path,
                                    ArrayRef<COFFShortExport> Exports,
-                                   COFF::MachineTypes Machine,
-                                   bool MakeWeakAliases);
+                                   COFF::MachineTypes Machine);
 
 } // namespace object
 } // namespace llvm

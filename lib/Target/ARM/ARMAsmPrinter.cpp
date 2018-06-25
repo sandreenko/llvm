@@ -173,10 +173,10 @@ bool ARMAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   if (! ThumbIndirectPads.empty()) {
     OutStreamer->EmitAssemblerFlag(MCAF_Code16);
     EmitAlignment(1);
-    for (std::pair<unsigned, MCSymbol *> &TIP : ThumbIndirectPads) {
-      OutStreamer->EmitLabel(TIP.second);
+    for (unsigned i = 0, e = ThumbIndirectPads.size(); i < e; i++) {
+      OutStreamer->EmitLabel(ThumbIndirectPads[i].second);
       EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::tBX)
-        .addReg(TIP.first)
+        .addReg(ThumbIndirectPads[i].first)
         // Add predicate operands.
         .addImm(ARMCC::AL)
         .addReg(0));
@@ -476,7 +476,11 @@ void ARMAsmPrinter::EmitStartOfAsmFile(Module &M) {
   // Use the triple's architecture and subarchitecture to determine
   // if we're thumb for the purposes of the top level code16 assembler
   // flag.
-  if (!M.getModuleInlineAsm().empty() && TT.isThumb())
+  bool isThumb = TT.getArch() == Triple::thumb ||
+                 TT.getArch() == Triple::thumbeb ||
+                 TT.getSubArch() == Triple::ARMSubArch_v7m ||
+                 TT.getSubArch() == Triple::ARMSubArch_v6m;
+  if (!M.getModuleInlineAsm().empty() && isThumb)
     OutStreamer->EmitAssemblerFlag(MCAF_Code16);
 }
 
@@ -945,7 +949,8 @@ void ARMAsmPrinter::EmitJumpTableAddrs(const MachineInstr *MI) {
   const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
   const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
 
-  for (MachineBasicBlock *MBB : JTBBs) {
+  for (unsigned i = 0, e = JTBBs.size(); i != e; ++i) {
+    MachineBasicBlock *MBB = JTBBs[i];
     // Construct an MCExpr for the entry. We want a value of the form:
     // (BasicBlockAddr - TableBeginAddr)
     //
@@ -988,7 +993,8 @@ void ARMAsmPrinter::EmitJumpTableInsts(const MachineInstr *MI) {
   const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
   const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
 
-  for (MachineBasicBlock *MBB : JTBBs) {
+  for (unsigned i = 0, e = JTBBs.size(); i != e; ++i) {
+    MachineBasicBlock *MBB = JTBBs[i];
     const MCExpr *MBBSymbolExpr = MCSymbolRefExpr::create(MBB->getSymbol(),
                                                           OutContext);
     // If this isn't a TBB or TBH, the entries are direct branch instructions.
@@ -1097,7 +1103,6 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
     case ARM::tPUSH:
       // Special case here: no src & dst reg, but two extra imp ops.
       StartOp = 2; NumOffset = 2;
-      LLVM_FALLTHROUGH;
     case ARM::STMDB_UPD:
     case ARM::t2STMDB_UPD:
     case ARM::VSTMDDB_UPD:
@@ -1270,7 +1275,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       // Add 's' bit operand (always reg0 for this)
       .addReg(0));
 
-    assert(Subtarget->hasV4TOps());
     EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::BX)
       .addReg(MI->getOperand(0).getReg()));
     return;
@@ -1287,9 +1291,9 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
     unsigned TReg = MI->getOperand(0).getReg();
     MCSymbol *TRegSym = nullptr;
-    for (std::pair<unsigned, MCSymbol *> &TIP : ThumbIndirectPads) {
-      if (TIP.first == TReg) {
-        TRegSym = TIP.second;
+    for (unsigned i = 0, e = ThumbIndirectPads.size(); i < e; i++) {
+      if (ThumbIndirectPads[i].first == TReg) {
+        TRegSym = ThumbIndirectPads[i].second;
         break;
       }
     }
@@ -1891,7 +1895,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       .addImm(ARMCC::AL)
       .addReg(0));
 
-    assert(Subtarget->hasV4TOps());
     EmitToStreamer(*OutStreamer, MCInstBuilder(ARM::BX)
       .addReg(ScratchReg)
       // Predicate.

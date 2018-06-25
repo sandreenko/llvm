@@ -60,7 +60,9 @@ namespace {
   class HexagonPacketizer : public MachineFunctionPass {
   public:
     static char ID;
-    HexagonPacketizer() : MachineFunctionPass(ID) {}
+    HexagonPacketizer() : MachineFunctionPass(ID) {
+      initializeHexagonPacketizerPass(*PassRegistry::getPassRegistry());
+    }
 
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesCFG();
@@ -87,14 +89,14 @@ namespace {
   char HexagonPacketizer::ID = 0;
 }
 
-INITIALIZE_PASS_BEGIN(HexagonPacketizer, "hexagon-packetizer",
-                      "Hexagon Packetizer", false, false)
+INITIALIZE_PASS_BEGIN(HexagonPacketizer, "packets", "Hexagon Packetizer",
+                      false, false)
 INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
 INITIALIZE_PASS_DEPENDENCY(MachineBranchProbabilityInfo)
 INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
 INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
-INITIALIZE_PASS_END(HexagonPacketizer, "hexagon-packetizer",
-                    "Hexagon Packetizer", false, false)
+INITIALIZE_PASS_END(HexagonPacketizer, "packets", "Hexagon Packetizer",
+                    false, false)
 
 HexagonPacketizerList::HexagonPacketizerList(MachineFunction &MF,
       MachineLoopInfo &MLI, AliasAnalysis *AA,
@@ -103,9 +105,7 @@ HexagonPacketizerList::HexagonPacketizerList(MachineFunction &MF,
   HII = MF.getSubtarget<HexagonSubtarget>().getInstrInfo();
   HRI = MF.getSubtarget<HexagonSubtarget>().getRegisterInfo();
 
-  addMutation(make_unique<HexagonSubtarget::UsrOverflowMutation>());
-  addMutation(make_unique<HexagonSubtarget::HVXMemLatencyMutation>());
-  addMutation(make_unique<HexagonSubtarget::BankConflictMutation>());
+  addMutation(make_unique<HexagonSubtarget::HexagonDAGMutation>());
 }
 
 // Check if FirstI modifies a register that SecondI reads.

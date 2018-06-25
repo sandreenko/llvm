@@ -12,10 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ObjectYAML/ObjectYAML.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/YAMLParser.h"
-#include "llvm/Support/YAMLTraits.h"
-#include <string>
+#include "llvm/ObjectYAML/YAML.h"
 
 using namespace llvm;
 using namespace yaml;
@@ -56,8 +53,8 @@ void MappingTraits<YamlObjectFile>::mapping(IO &IO,
         IO.setError("YAML Object File missing document type tag!");
       else
         IO.setError(
-            Twine("YAML Object File unsupported document type tag '") +
-            Twine(Tag) + Twine("'!"));
+            llvm::Twine("YAML Object File unsupported document type tag '") +
+            llvm::Twine(Tag) + llvm::Twine("'!"));
     }
   }
 }

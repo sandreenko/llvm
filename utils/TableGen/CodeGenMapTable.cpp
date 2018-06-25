@@ -367,7 +367,7 @@ unsigned MapTableEmitter::emitBinSearchTable(raw_ostream &OS) {
 
   ArrayRef<const CodeGenInstruction*> NumberedInstructions =
                                             Target.getInstructionsByEnumValue();
-  StringRef Namespace = Target.getInstNamespace();
+  std::string Namespace = Target.getInstNamespace();
   const std::vector<ListInit*> &ValueCols = InstrMapDesc.getValueCols();
   unsigned NumCol = ValueCols.size();
   unsigned TotalNumInstr = NumberedInstructions.size();
@@ -567,7 +567,7 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 void EmitMapTable(RecordKeeper &Records, raw_ostream &OS) {
   CodeGenTarget Target(Records);
-  StringRef NameSpace = Target.getInstNamespace();
+  std::string NameSpace = Target.getInstNamespace();
   std::vector<Record*> InstrMapVec;
   InstrMapVec = Records.getAllDerivedDefinitions("InstrMapping");
 

@@ -171,6 +171,6 @@ void MappingTraits<DWARFYAML::InitialLength>::mapping(
     IO.mapRequired("TotalLength64", InitialLength.TotalLength64);
 }
 
-} // end namespace yaml
+} // namespace llvm::yaml
 
-} // end namespace llvm
+} // namespace llvm

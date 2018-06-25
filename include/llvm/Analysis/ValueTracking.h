@@ -86,7 +86,7 @@ template <typename T> class ArrayRef;
                               const DominatorTree *DT = nullptr);
 
   bool isOnlyUsedInZeroEqualityComparison(const Instruction *CxtI);
-
+  
   /// Return true if the given value is known to be non-zero when defined. For
   /// vectors, return true if every element is known to be non-zero when
   /// defined. For pointers, if the context instruction and dominator tree are
@@ -248,8 +248,8 @@ template <typename T> class ArrayRef;
     }
   };
 
-  /// Returns true if the value \p V is a pointer into a ConstantDataArray.
-  /// If successful \p Slice will point to a ConstantDataArray info object
+  /// Returns true if the value \p V is a pointer into a ContantDataArray.
+  /// If successful \p Index will point to a ConstantDataArray info object
   /// with an appropriate offset.
   bool getConstantDataArrayInfo(const Value *V, ConstantDataArraySlice &Slice,
                                 unsigned ElementSize, uint64_t Offset = 0);
@@ -311,12 +311,6 @@ template <typename T> class ArrayRef;
   void GetUnderlyingObjects(Value *V, SmallVectorImpl<Value *> &Objects,
                             const DataLayout &DL, LoopInfo *LI = nullptr,
                             unsigned MaxLookup = 6);
-
-  /// This is a wrapper around GetUnderlyingObjects and adds support for basic
-  /// ptrtoint+arithmetic+inttoptr sequences.
-  void getUnderlyingObjectsForCodeGen(const Value *V,
-                            SmallVectorImpl<Value *> &Objects,
-                            const DataLayout &DL);
 
   /// Return true if the only users of this pointer are lifetime markers.
   bool onlyUsedByLifetimeMarkers(const Value *V);
@@ -528,8 +522,12 @@ template <typename T> class ArrayRef;
   ///  F | T | T
   /// (A)
   Optional<bool> isImpliedCondition(const Value *LHS, const Value *RHS,
-                                    const DataLayout &DL, bool LHSIsTrue = true,
-                                    unsigned Depth = 0);
+                                    const DataLayout &DL,
+                                    bool InvertAPred = false,
+                                    unsigned Depth = 0,
+                                    AssumptionCache *AC = nullptr,
+                                    const Instruction *CxtI = nullptr,
+                                    const DominatorTree *DT = nullptr);
 } // end namespace llvm
 
 #endif

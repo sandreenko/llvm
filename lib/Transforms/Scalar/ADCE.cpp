@@ -27,7 +27,6 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/DebugInfoMetadata.h"
-#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
@@ -90,10 +89,6 @@ struct BlockInfoType {
 
 class AggressiveDeadCodeElimination {
   Function &F;
-
-  // ADCE does not use DominatorTree per se, but it updates it to preserve the
-  // analysis.
-  DominatorTree &DT;
   PostDominatorTree &PDT;
 
   /// Mapping of blocks to associated information, an element in BlockInfoVec.
@@ -162,10 +157,9 @@ class AggressiveDeadCodeElimination {
   void makeUnconditional(BasicBlock *BB, BasicBlock *Target);
 
 public:
- AggressiveDeadCodeElimination(Function &F, DominatorTree &DT,
-                               PostDominatorTree &PDT)
-     : F(F), DT(DT), PDT(PDT) {}
- bool performDeadCodeElimination();
+  AggressiveDeadCodeElimination(Function &F, PostDominatorTree &PDT)
+      : F(F), PDT(PDT) {}
+  bool performDeadCodeElimination();
 };
 }
 
@@ -259,23 +253,27 @@ void AggressiveDeadCodeElimination::initialize() {
     }
   }
 
-  // Mark blocks live if there is no path from the block to a
-  // return of the function.
-  // We do this by seeing which of the postdomtree root children exit the
-  // program, and for all others, mark the subtree live.
-  for (auto &PDTChild : children<DomTreeNode *>(PDT.getRootNode())) {
-    auto *BB = PDTChild->getBlock();
-    auto &Info = BlockInfo[BB];
-    // Real function return
-    if (isa<ReturnInst>(Info.Terminator)) {
-      DEBUG(dbgs() << "post-dom root child is a return: " << BB->getName()
+  // Mark blocks live if there is no path from the block to the
+  // return of the function or a successor for which this is true.
+  // This protects IDFCalculator which cannot handle such blocks.
+  for (auto &BBInfoPair : BlockInfo) {
+    auto &BBInfo = BBInfoPair.second;
+    if (BBInfo.terminatorIsLive())
+      continue;
+    auto *BB = BBInfo.BB;
+    if (!PDT.getNode(BB)) {
+      DEBUG(dbgs() << "Not post-dominated by return: " << BB->getName()
                    << '\n';);
+      markLive(BBInfo.Terminator);
       continue;
     }
-
-    // This child is something else, like an infinite loop.
-    for (auto DFNode : depth_first(PDTChild))
-      markLive(BlockInfo[DFNode->getBlock()].Terminator);
+    for (auto *Succ : successors(BB))
+      if (!PDT.getNode(Succ)) {
+        DEBUG(dbgs() << "Successor not post-dominated by return: "
+                     << BB->getName() << '\n';);
+        markLive(BBInfo.Terminator);
+        break;
+      }
   }
 
   // Treat the entry block as always live
@@ -563,34 +561,14 @@ void AggressiveDeadCodeElimination::updateDeadRegions() {
     }
     assert((PreferredSucc && PreferredSucc->PostOrder > 0) &&
            "Failed to find safe successor for dead branch");
-
-    // Collect removed successors to update the (Post)DominatorTrees.
-    SmallPtrSet<BasicBlock *, 4> RemovedSuccessors;
     bool First = true;
     for (auto *Succ : successors(BB)) {
-      if (!First || Succ != PreferredSucc->BB) {
+      if (!First || Succ != PreferredSucc->BB)
         Succ->removePredecessor(BB);
-        RemovedSuccessors.insert(Succ);
-      } else
+      else
         First = false;
     }
     makeUnconditional(BB, PreferredSucc->BB);
-
-    // Inform the dominators about the deleted CFG edges.
-    SmallVector<DominatorTree::UpdateType, 4> DeletedEdges;
-    for (auto *Succ : RemovedSuccessors) {
-      // It might have happened that the same successor appeared multiple times
-      // and the CFG edge wasn't really removed.
-      if (Succ != PreferredSucc->BB) {
-        DEBUG(dbgs() << "ADCE: (Post)DomTree edge enqueued for deletion"
-                     << BB->getName() << " -> " << Succ->getName() << "\n");
-        DeletedEdges.push_back({DominatorTree::Delete, BB, Succ});
-      }
-    }
-
-    DT.applyUpdates(DeletedEdges);
-    PDT.applyUpdates(DeletedEdges);
-
     NumBranchesRemoved += 1;
   }
 }
@@ -635,9 +613,6 @@ void AggressiveDeadCodeElimination::makeUnconditional(BasicBlock *BB,
   InstInfo[NewTerm].Live = true;
   if (const DILocation *DL = PredTerm->getDebugLoc())
     NewTerm->setDebugLoc(DL);
-
-  InstInfo.erase(PredTerm);
-  PredTerm->eraseFromParent();
 }
 
 //===----------------------------------------------------------------------===//
@@ -646,16 +621,13 @@ void AggressiveDeadCodeElimination::makeUnconditional(BasicBlock *BB,
 //
 //===----------------------------------------------------------------------===//
 PreservedAnalyses ADCEPass::run(Function &F, FunctionAnalysisManager &FAM) {
-  auto &DT = FAM.getResult<DominatorTreeAnalysis>(F);
   auto &PDT = FAM.getResult<PostDominatorTreeAnalysis>(F);
-  if (!AggressiveDeadCodeElimination(F, DT, PDT).performDeadCodeElimination())
+  if (!AggressiveDeadCodeElimination(F, PDT).performDeadCodeElimination())
     return PreservedAnalyses::all();
 
   PreservedAnalyses PA;
   PA.preserveSet<CFGAnalyses>();
   PA.preserve<GlobalsAA>();
-  PA.preserve<DominatorTreeAnalysis>();
-  PA.preserve<PostDominatorTreeAnalysis>();
   return PA;
 }
 
@@ -669,23 +641,14 @@ struct ADCELegacyPass : public FunctionPass {
   bool runOnFunction(Function &F) override {
     if (skipFunction(F))
       return false;
-
-    auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     auto &PDT = getAnalysis<PostDominatorTreeWrapperPass>().getPostDomTree();
-    return AggressiveDeadCodeElimination(F, DT, PDT)
-        .performDeadCodeElimination();
+    return AggressiveDeadCodeElimination(F, PDT).performDeadCodeElimination();
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-    // We require DominatorTree here only to update and thus preserve it.
-    AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<PostDominatorTreeWrapperPass>();
     if (!RemoveControlFlowFlag)
       AU.setPreservesCFG();
-    else {
-      AU.addPreserved<DominatorTreeWrapperPass>();
-      AU.addPreserved<PostDominatorTreeWrapperPass>();
-    }
     AU.addPreserved<GlobalsAAWrapperPass>();
   }
 };
@@ -694,7 +657,6 @@ struct ADCELegacyPass : public FunctionPass {
 char ADCELegacyPass::ID = 0;
 INITIALIZE_PASS_BEGIN(ADCELegacyPass, "adce",
                       "Aggressive Dead Code Elimination", false, false)
-INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(PostDominatorTreeWrapperPass)
 INITIALIZE_PASS_END(ADCELegacyPass, "adce", "Aggressive Dead Code Elimination",
                     false, false)

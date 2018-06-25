@@ -414,7 +414,6 @@ def IIC_VTBX1      : InstrItinClass;
 def IIC_VTBX2      : InstrItinClass;
 def IIC_VTBX3      : InstrItinClass;
 def IIC_VTBX4      : InstrItinClass;
-def IIC_VDOTPROD   : InstrItinClass;
 
 //===----------------------------------------------------------------------===//
 // Processor instruction itineraries.
@@ -425,4 +424,3 @@ include "ARMScheduleA9.td"
 include "ARMScheduleSwift.td"
 include "ARMScheduleR52.td"
 include "ARMScheduleA57.td"
-include "ARMScheduleM3.td"

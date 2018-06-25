@@ -13,11 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ObjectYAML/CodeViewYAMLDebugSections.h"
-#include "llvm/ADT/STLExtras.h"
+
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/BinaryFormat/COFF.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/DebugChecksumsSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugCrossExSubsection.h"
@@ -26,29 +24,15 @@
 #include "llvm/DebugInfo/CodeView/DebugInlineeLinesSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugLinesSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
-#include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsectionVisitor.h"
 #include "llvm/DebugInfo/CodeView/DebugSymbolRVASubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugSymbolsSubsection.h"
-#include "llvm/DebugInfo/CodeView/Line.h"
+#include "llvm/DebugInfo/CodeView/EnumTables.h"
 #include "llvm/DebugInfo/CodeView/StringsAndChecksums.h"
-#include "llvm/DebugInfo/CodeView/TypeIndex.h"
+#include "llvm/DebugInfo/CodeView/SymbolRecord.h"
+#include "llvm/DebugInfo/CodeView/SymbolSerializer.h"
 #include "llvm/ObjectYAML/CodeViewYAMLSymbols.h"
-#include "llvm/Support/Allocator.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/YAMLTraits.h"
-#include "llvm/Support/raw_ostream.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <tuple>
-#include <vector>
-
+#include "llvm/Support/BinaryStreamWriter.h"
 using namespace llvm;
 using namespace llvm::codeview;
 using namespace llvm::CodeViewYAML;
@@ -64,7 +48,9 @@ LLVM_YAML_IS_SEQUENCE_VECTOR(InlineeSite)
 LLVM_YAML_IS_SEQUENCE_VECTOR(InlineeInfo)
 LLVM_YAML_IS_SEQUENCE_VECTOR(CrossModuleExport)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YAMLCrossModuleImport)
+LLVM_YAML_IS_SEQUENCE_VECTOR(StringRef)
 LLVM_YAML_IS_SEQUENCE_VECTOR(YAMLFrameData)
+LLVM_YAML_IS_FLOW_SEQUENCE_VECTOR(uint32_t)
 
 LLVM_YAML_DECLARE_SCALAR_TRAITS(HexFormattedString, false)
 LLVM_YAML_DECLARE_ENUM_TRAITS(DebugSubsectionKind)
@@ -84,25 +70,21 @@ LLVM_YAML_DECLARE_MAPPING_TRAITS(InlineeSite)
 namespace llvm {
 namespace CodeViewYAML {
 namespace detail {
-
 struct YAMLSubsectionBase {
   explicit YAMLSubsectionBase(DebugSubsectionKind Kind) : Kind(Kind) {}
-  virtual ~YAMLSubsectionBase() = default;
+  DebugSubsectionKind Kind;
+  virtual ~YAMLSubsectionBase() {}
 
   virtual void map(IO &IO) = 0;
   virtual std::shared_ptr<DebugSubsection>
   toCodeViewSubsection(BumpPtrAllocator &Allocator,
                        const codeview::StringsAndChecksums &SC) const = 0;
-
-  DebugSubsectionKind Kind;
 };
-
-} // end namespace detail
-} // end namespace CodeViewYAML
-} // end namespace llvm
+}
+}
+}
 
 namespace {
-
 struct YAMLChecksumsSubsection : public YAMLSubsectionBase {
   YAMLChecksumsSubsection()
       : YAMLSubsectionBase(DebugSubsectionKind::FileChecksums) {}
@@ -233,8 +215,7 @@ struct YAMLCoffSymbolRVASubsection : public YAMLSubsectionBase {
 
   std::vector<uint32_t> RVAs;
 };
-
-} // end anonymous namespace
+}
 
 void ScalarBitSetTraits<LineFlags>::bitset(IO &io, LineFlags &Flags) {
   io.bitSetCase(Flags, "HasColumnInfo", LF_HaveColumns);
@@ -762,9 +743,8 @@ llvm::CodeViewYAML::toCodeViewSubsectionList(
 }
 
 namespace {
-
 struct SubsectionConversionVisitor : public DebugSubsectionVisitor {
-  SubsectionConversionVisitor() = default;
+  SubsectionConversionVisitor() {}
 
   Error visitUnknown(DebugUnknownSubsectionRef &Unknown) override;
   Error visitLines(DebugLinesSubsectionRef &Lines,
@@ -788,8 +768,6 @@ struct SubsectionConversionVisitor : public DebugSubsectionVisitor {
 
   YAMLDebugSubsection Subsection;
 };
-
-} // end anonymous namespace
 
 Error SubsectionConversionVisitor::visitUnknown(
     DebugUnknownSubsectionRef &Unknown) {
@@ -886,6 +864,7 @@ Error SubsectionConversionVisitor::visitCOFFSymbolRVAs(
     return Result.takeError();
   Subsection.Subsection = *Result;
   return Error::success();
+}
 }
 
 Expected<YAMLDebugSubsection>

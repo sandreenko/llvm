@@ -75,7 +75,7 @@ static cl::opt<bool>
 static cl::opt<unsigned> TailDupLimit("tail-dup-limit", cl::init(~0U),
                                       cl::Hidden);
 
-void TailDuplicator::initMF(MachineFunction &MFin, bool PreRegAlloc,
+void TailDuplicator::initMF(MachineFunction &MFin,
                             const MachineBranchProbabilityInfo *MBPIin,
                             bool LayoutModeIn, unsigned TailDupSizeIn) {
   MF = &MFin;
@@ -89,7 +89,7 @@ void TailDuplicator::initMF(MachineFunction &MFin, bool PreRegAlloc,
   assert(MBPI != nullptr && "Machine Branch Probability Info required");
 
   LayoutMode = LayoutModeIn;
-  this->PreRegAlloc = PreRegAlloc;
+  PreRegAlloc = MRI->isSSA();
 }
 
 static void VerifyPHIs(MachineFunction &MF, bool CheckExtra) {
@@ -369,10 +369,10 @@ void TailDuplicator::duplicateInstruction(
     MachineInstr *MI, MachineBasicBlock *TailBB, MachineBasicBlock *PredBB,
     DenseMap<unsigned, RegSubRegPair> &LocalVRMap,
     const DenseSet<unsigned> &UsedByPhi) {
-  MachineInstr &NewMI = TII->duplicate(*PredBB, PredBB->end(), *MI);
+  MachineInstr *NewMI = TII->duplicate(*MI, *MF);
   if (PreRegAlloc) {
-    for (unsigned i = 0, e = NewMI.getNumOperands(); i != e; ++i) {
-      MachineOperand &MO = NewMI.getOperand(i);
+    for (unsigned i = 0, e = NewMI->getNumOperands(); i != e; ++i) {
+      MachineOperand &MO = NewMI->getOperand(i);
       if (!MO.isReg())
         continue;
       unsigned Reg = MO.getReg();
@@ -443,6 +443,7 @@ void TailDuplicator::duplicateInstruction(
       }
     }
   }
+  PredBB->insert(PredBB->instr_end(), NewMI);
 }
 
 /// After FromBB is tail duplicated into its predecessor blocks, the successors
@@ -824,8 +825,10 @@ bool TailDuplicator::tailDuplicate(bool IsSimple, MachineBasicBlock *TailBB,
     // Clone the contents of TailBB into PredBB.
     DenseMap<unsigned, RegSubRegPair> LocalVRMap;
     SmallVector<std::pair<unsigned, RegSubRegPair>, 4> CopyInfos;
-    for (MachineBasicBlock::iterator I = TailBB->begin(), E = TailBB->end();
-         I != E; /* empty */) {
+    // Use instr_iterator here to properly handle bundles, e.g.
+    // ARM Thumb2 IT block.
+    MachineBasicBlock::instr_iterator I = TailBB->instr_begin();
+    while (I != TailBB->instr_end()) {
       MachineInstr *MI = &*I;
       ++I;
       if (MI->isPHI()) {

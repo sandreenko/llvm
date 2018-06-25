@@ -42,8 +42,6 @@ public:
                                      MCSymbol *Sym) const;
   MCOperand lowerSymbolOperandELF(const MachineOperand &MO,
                                   MCSymbol *Sym) const;
-  MCOperand lowerSymbolOperandCOFF(const MachineOperand &MO,
-                                   MCSymbol *Sym) const;
   MCOperand LowerSymbolOperand(const MachineOperand &MO, MCSymbol *Sym) const;
 
   MCSymbol *GetGlobalAddressSymbol(const MachineOperand &MO) const;

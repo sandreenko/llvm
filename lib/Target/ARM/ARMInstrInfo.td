@@ -241,8 +241,6 @@ def HasV8_1a         : Predicate<"Subtarget->hasV8_1aOps()">,
                                  AssemblerPredicate<"HasV8_1aOps", "armv8.1a">;
 def HasV8_2a         : Predicate<"Subtarget->hasV8_2aOps()">,
                                  AssemblerPredicate<"HasV8_2aOps", "armv8.2a">;
-def HasV8_3a         : Predicate<"Subtarget->hasV8_3aOps()">,
-                                 AssemblerPredicate<"HasV8_3aOps", "armv8.3a">;
 def NoVFP            : Predicate<"!Subtarget->hasVFP2()">;
 def HasVFP2          : Predicate<"Subtarget->hasVFP2()">,
                                  AssemblerPredicate<"FeatureVFP2", "VFP2">;
@@ -259,8 +257,6 @@ def HasNEON          : Predicate<"Subtarget->hasNEON()">,
                                  AssemblerPredicate<"FeatureNEON", "NEON">;
 def HasCrypto        : Predicate<"Subtarget->hasCrypto()">,
                                  AssemblerPredicate<"FeatureCrypto", "crypto">;
-def HasDotProd       : Predicate<"Subtarget->hasDotProd()">,
-                                 AssemblerPredicate<"FeatureDotProd", "dotprod">;
 def HasCRC           : Predicate<"Subtarget->hasCRC()">,
                                  AssemblerPredicate<"FeatureCRC", "crc">;
 def HasRAS           : Predicate<"Subtarget->hasRAS()">,
@@ -317,8 +313,6 @@ def IsNotMachO       : Predicate<"!Subtarget->isTargetMachO()">;
 def IsNaCl           : Predicate<"Subtarget->isTargetNaCl()">;
 def IsWindows        : Predicate<"Subtarget->isTargetWindows()">;
 def IsNotWindows     : Predicate<"!Subtarget->isTargetWindows()">;
-def IsReadTPHard     : Predicate<"Subtarget->isReadTPHard()">;
-def IsReadTPSoft     : Predicate<"!Subtarget->isReadTPHard()">;
 def UseNaClTrap      : Predicate<"Subtarget->useNaClTrap()">,
                                  AssemblerPredicate<"FeatureNaClTrap", "NaCl">;
 def DontUseNaClTrap  : Predicate<"!Subtarget->useNaClTrap()">;
@@ -2431,7 +2425,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1, Uses = [SP] in {
   def TAILJMPr : ARMPseudoExpand<(outs), (ins tcGPR:$dst),
                                  4, IIC_Br, [],
                                  (BX GPR:$dst)>, Sched<[WriteBr]>,
-                                 Requires<[IsARM, HasV4T]>;
+                                 Requires<[IsARM]>;
 }
 
 // Secure Monitor Call is a system instruction.
@@ -5039,8 +5033,6 @@ def CDP : ABI<0b1110, (outs), (ins p_imm:$cop, imm0_15:$opc1,
   let Inst{15-12} = CRd;
   let Inst{19-16} = CRn;
   let Inst{23-20} = opc1;
-
-  let DecoderNamespace = "CoProc";
 }
 
 def CDP2 : ABXI<0b1110, (outs), (ins p_imm:$cop, imm0_15:$opc1,
@@ -5064,8 +5056,6 @@ def CDP2 : ABXI<0b1110, (outs), (ins p_imm:$cop, imm0_15:$opc1,
   let Inst{15-12} = CRd;
   let Inst{19-16} = CRn;
   let Inst{23-20} = opc1;
-
-  let DecoderNamespace = "CoProc";
 }
 
 class ACI<dag oops, dag iops, string opc, string asm,
@@ -5081,8 +5071,6 @@ class ACInoP<dag oops, dag iops, string opc, string asm,
   let Inst{31-28} = 0b1111;
   let Inst{27-25} = 0b110;
 }
-
-let DecoderNamespace = "CoProc" in {
 multiclass LdStCop<bit load, bit Dbit, string asm, list<dag> pattern> {
   def _OFFSET : ACI<(outs), (ins p_imm:$cop, c_imm:$CRd, addrmode5:$addr),
                     asm, "\t$cop, $CRd, $addr", pattern> {
@@ -5236,8 +5224,6 @@ defm STCL  : LdStCop <0, 1, "stcl", [(int_arm_stcl imm:$cop, imm:$CRd, addrmode5
 defm STC2  : LdSt2Cop<0, 0, "stc2", [(int_arm_stc2 imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[IsARM,PreV8]>;
 defm STC2L : LdSt2Cop<0, 1, "stc2l", [(int_arm_stc2l imm:$cop, imm:$CRd, addrmode5:$addr)]>, Requires<[IsARM,PreV8]>;
 
-} // DecoderNamespace = "CoProc"
-
 //===----------------------------------------------------------------------===//
 // Move between coprocessor and ARM core register.
 //
@@ -5262,8 +5248,6 @@ class MovRCopro<string opc, bit direction, dag oops, dag iops,
   let Inst{7-5}   = opc2;
   let Inst{3-0}   = CRm;
   let Inst{19-16} = CRn;
-
-  let DecoderNamespace = "CoProc";
 }
 
 def MCR : MovRCopro<"mcr", 0 /* from ARM core register to coprocessor */,
@@ -5308,8 +5292,6 @@ class MovRCopro2<string opc, bit direction, dag oops, dag iops,
   let Inst{7-5}   = opc2;
   let Inst{3-0}   = CRm;
   let Inst{19-16} = CRn;
-
-  let DecoderNamespace = "CoProc";
 }
 
 def MCR2 : MovRCopro2<"mcr2", 0 /* from ARM core register to coprocessor */,
@@ -5537,13 +5519,8 @@ let usesCustomInserter = 1, Defs = [CPSR] in
 let isCall = 1,
   Defs = [R0, R12, LR, CPSR], Uses = [SP] in {
   def TPsoft : ARMPseudoInst<(outs), (ins), 4, IIC_Br,
-               [(set R0, ARMthread_pointer)]>, Sched<[WriteBr]>,
-               Requires<[IsARM, IsReadTPSoft]>;
+               [(set R0, ARMthread_pointer)]>, Sched<[WriteBr]>;
 }
-
-// Reading thread pointer from coprocessor register
-def : ARMPat<(ARMthread_pointer), (MRC 15, 0, 13, 0, 3)>,
-      Requires<[IsARM, IsReadTPHard]>;
 
 //===----------------------------------------------------------------------===//
 // SJLJ Exception handling intrinsics
@@ -5609,12 +5586,6 @@ def Int_eh_sjlj_dispatchsetup : PseudoInst<(outs), (ins), NoItinerary, []>;
 let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in
   def MOVPCRX : ARMPseudoExpand<(outs), (ins GPR:$dst),
                     4, IIC_Br, [(brind GPR:$dst)],
-                    (MOVr PC, GPR:$dst, (ops 14, zero_reg), zero_reg)>,
-                  Requires<[IsARM, NoV4T]>, Sched<[WriteBr]>;
-
-let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1, Uses = [SP] in
-  def TAILJMPr4 : ARMPseudoExpand<(outs), (ins GPR:$dst),
-                    4, IIC_Br, [],
                     (MOVr PC, GPR:$dst, (ops 14, zero_reg), zero_reg)>,
                   Requires<[IsARM, NoV4T]>, Sched<[WriteBr]>;
 
@@ -6082,21 +6053,21 @@ def SPACE : PseudoInst<(outs GPR:$Rd), (ins i32imm:$size, GPR:$Rn),
 // significantly more naive than the standard expansion: we conservatively
 // assume seq_cst, strong cmpxchg and omit clrex on failure.
 
-let Constraints = "@earlyclobber $Rd,@earlyclobber $temp",
+let Constraints = "@earlyclobber $Rd,@earlyclobber $status",
     mayLoad = 1, mayStore = 1 in {
-def CMP_SWAP_8 : PseudoInst<(outs GPR:$Rd, GPR:$temp),
+def CMP_SWAP_8 : PseudoInst<(outs GPR:$Rd, GPR:$status),
                             (ins GPR:$addr, GPR:$desired, GPR:$new),
                             NoItinerary, []>, Sched<[]>;
 
-def CMP_SWAP_16 : PseudoInst<(outs GPR:$Rd, GPR:$temp),
+def CMP_SWAP_16 : PseudoInst<(outs GPR:$Rd, GPR:$status),
                              (ins GPR:$addr, GPR:$desired, GPR:$new),
                              NoItinerary, []>, Sched<[]>;
 
-def CMP_SWAP_32 : PseudoInst<(outs GPR:$Rd, GPR:$temp),
+def CMP_SWAP_32 : PseudoInst<(outs GPR:$Rd, GPR:$status),
                              (ins GPR:$addr, GPR:$desired, GPR:$new),
                              NoItinerary, []>, Sched<[]>;
 
-def CMP_SWAP_64 : PseudoInst<(outs GPRPair:$Rd, GPR:$temp),
+def CMP_SWAP_64 : PseudoInst<(outs GPRPair:$Rd, GPR:$status),
                              (ins GPR:$addr, GPRPair:$desired, GPRPair:$new),
                              NoItinerary, []>, Sched<[]>;
 }

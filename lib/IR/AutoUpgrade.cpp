@@ -142,11 +142,6 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name.startswith("avx512.mask.packssdw.") || // Added in 5.0
       Name.startswith("avx512.mask.packuswb.") || // Added in 5.0
       Name.startswith("avx512.mask.packusdw.") || // Added in 5.0
-      Name.startswith("avx512.mask.cmp.b") || // Added in 5.0
-      Name.startswith("avx512.mask.cmp.d") || // Added in 5.0
-      Name.startswith("avx512.mask.cmp.q") || // Added in 5.0
-      Name.startswith("avx512.mask.cmp.w") || // Added in 5.0
-      Name.startswith("avx512.mask.ucmp.") || // Added in 5.0
       Name == "avx512.mask.add.pd.128" || // Added in 4.0
       Name == "avx512.mask.add.pd.256" || // Added in 4.0
       Name == "avx512.mask.add.ps.128" || // Added in 4.0
@@ -239,14 +234,6 @@ static bool ShouldUpgradeX86Intrinsic(Function *F, StringRef Name) {
       Name.startswith("avx2.pblendd.") || // Added in 3.7
       Name.startswith("avx.vbroadcastf128") || // Added in 4.0
       Name == "avx2.vbroadcasti128" || // Added in 3.7
-      Name.startswith("avx512.mask.broadcastf32x4.") || // Added in 6.0
-      Name.startswith("avx512.mask.broadcastf64x2.") || // Added in 6.0
-      Name.startswith("avx512.mask.broadcasti32x4.") || // Added in 6.0
-      Name.startswith("avx512.mask.broadcasti64x2.") || // Added in 6.0
-      Name == "avx512.mask.broadcastf32x8.512" || // Added in 6.0
-      Name == "avx512.mask.broadcasti32x8.512" || // Added in 6.0
-      Name == "avx512.mask.broadcastf64x4.512" || // Added in 6.0
-      Name == "avx512.mask.broadcasti64x4.512" || // Added in 6.0
       Name == "xop.vpcmov" || // Added in 3.8
       Name == "xop.vpcmov.256" || // Added in 5.0
       Name.startswith("avx512.mask.move.s") || // Added in 4.0
@@ -424,14 +411,6 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
       rename(F);
       NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::cttz,
                                         F->arg_begin()->getType());
-      return true;
-    }
-    break;
-  }
-  case 'd': {
-    if (Name == "dbg.value" && F->arg_size() == 4) {
-      rename(F);
-      NewFn = Intrinsic::getDeclaration(F->getParent(), Intrinsic::dbg_value);
       return true;
     }
     break;
@@ -804,30 +783,12 @@ static Value *upgradeIntMinMax(IRBuilder<> &Builder, CallInst &CI,
 }
 
 static Value *upgradeMaskedCompare(IRBuilder<> &Builder, CallInst &CI,
-                                   unsigned CC, bool Signed) {
+                                   ICmpInst::Predicate Pred) {
   Value *Op0 = CI.getArgOperand(0);
   unsigned NumElts = Op0->getType()->getVectorNumElements();
+  Value *Cmp = Builder.CreateICmp(Pred, Op0, CI.getArgOperand(1));
 
-  Value *Cmp;
-  if (CC == 3) {
-    Cmp = Constant::getNullValue(llvm::VectorType::get(Builder.getInt1Ty(), NumElts));
-  } else if (CC == 7) {
-    Cmp = Constant::getAllOnesValue(llvm::VectorType::get(Builder.getInt1Ty(), NumElts));
-  } else {
-    ICmpInst::Predicate Pred;
-    switch (CC) {
-    default: llvm_unreachable("Unknown condition code");
-    case 0: Pred = ICmpInst::ICMP_EQ;  break;
-    case 1: Pred = Signed ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT; break;
-    case 2: Pred = Signed ? ICmpInst::ICMP_SLE : ICmpInst::ICMP_ULE; break;
-    case 4: Pred = ICmpInst::ICMP_NE;  break;
-    case 5: Pred = Signed ? ICmpInst::ICMP_SGE : ICmpInst::ICMP_UGE; break;
-    case 6: Pred = Signed ? ICmpInst::ICMP_SGT : ICmpInst::ICMP_UGT; break;
-    }
-    Cmp = Builder.CreateICmp(Pred, Op0, CI.getArgOperand(1));
-  }
-
-  Value *Mask = CI.getArgOperand(CI.getNumArgOperands() - 1);
+  Value *Mask = CI.getArgOperand(2);
   const auto *C = dyn_cast<Constant>(Mask);
   if (!C || !C->isAllOnesValue())
     Cmp = Builder.CreateAnd(Cmp, getX86MaskVec(Builder, Mask, NumElts));
@@ -1046,13 +1007,9 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     } else if (IsX86 && Name.startswith("avx512.mask.pcmp")) {
       // "avx512.mask.pcmpeq." or "avx512.mask.pcmpgt."
       bool CmpEq = Name[16] == 'e';
-      Rep = upgradeMaskedCompare(Builder, *CI, CmpEq ? 0 : 6, true);
-    } else if (IsX86 && Name.startswith("avx512.mask.cmp")) {
-      unsigned Imm = cast<ConstantInt>(CI->getArgOperand(2))->getZExtValue();
-      Rep = upgradeMaskedCompare(Builder, *CI, Imm, true);
-    } else if (IsX86 && Name.startswith("avx512.mask.ucmp")) {
-      unsigned Imm = cast<ConstantInt>(CI->getArgOperand(2))->getZExtValue();
-      Rep = upgradeMaskedCompare(Builder, *CI, Imm, false);
+      Rep = upgradeMaskedCompare(Builder, *CI,
+                                 CmpEq ? ICmpInst::ICMP_EQ
+                                       : ICmpInst::ICMP_SGT);
     } else if (IsX86 && (Name == "sse41.pmaxsb" ||
                          Name == "sse2.pmaxs.w" ||
                          Name == "sse41.pmaxsd" ||
@@ -1229,21 +1186,6 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       else
         Rep = Builder.CreateShuffleVector(Load, UndefValue::get(Load->getType()),
                                           { 0, 1, 2, 3, 0, 1, 2, 3 });
-    } else if (IsX86 && (Name.startswith("avx512.mask.broadcastf") ||
-                         Name.startswith("avx512.mask.broadcasti"))) {
-      unsigned NumSrcElts =
-                        CI->getArgOperand(0)->getType()->getVectorNumElements();
-      unsigned NumDstElts = CI->getType()->getVectorNumElements();
-
-      SmallVector<uint32_t, 8> ShuffleMask(NumDstElts);
-      for (unsigned i = 0; i != NumDstElts; ++i)
-        ShuffleMask[i] = i % NumSrcElts;
-
-      Rep = Builder.CreateShuffleVector(CI->getArgOperand(0),
-                                        CI->getArgOperand(0),
-                                        ShuffleMask);
-      Rep = EmitX86Select(Builder, CI->getArgOperand(2), Rep,
-                          CI->getArgOperand(1));
     } else if (IsX86 && (Name.startswith("avx2.pbroadcast") ||
                          Name.startswith("avx2.vbroadcast") ||
                          Name.startswith("avx512.pbroadcast") ||
@@ -2086,20 +2028,6 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     NewCall = Builder.CreateCall(NewFn, {CI->getArgOperand(0)});
     break;
 
-  case Intrinsic::dbg_value:
-    // Upgrade from the old version that had an extra offset argument.
-    assert(CI->getNumArgOperands() == 4);
-    // Drop nonzero offsets instead of attempting to upgrade them.
-    if (auto *Offset = dyn_cast_or_null<Constant>(CI->getArgOperand(1)))
-      if (Offset->isZeroValue()) {
-        NewCall = Builder.CreateCall(
-            NewFn,
-            {CI->getArgOperand(0), CI->getArgOperand(2), CI->getArgOperand(3)});
-        break;
-      }
-    CI->eraseFromParent();
-    return;
-
   case Intrinsic::x86_xop_vfrcz_ss:
   case Intrinsic::x86_xop_vfrcz_sd:
     NewCall = Builder.CreateCall(NewFn, {CI->getArgOperand(1)});
@@ -2284,14 +2212,14 @@ bool llvm::UpgradeDebugInfo(Module &M) {
 }
 
 bool llvm::UpgradeModuleFlags(Module &M) {
-  NamedMDNode *ModFlags = M.getModuleFlagsMetadata();
+  const NamedMDNode *ModFlags = M.getModuleFlagsMetadata();
   if (!ModFlags)
     return false;
 
-  bool HasObjCFlag = false, HasClassProperties = false, Changed = false;
+  bool HasObjCFlag = false, HasClassProperties = false;
   for (unsigned I = 0, E = ModFlags->getNumOperands(); I != E; ++I) {
     MDNode *Op = ModFlags->getOperand(I);
-    if (Op->getNumOperands() != 3)
+    if (Op->getNumOperands() < 2)
       continue;
     MDString *ID = dyn_cast_or_null<MDString>(Op->getOperand(1));
     if (!ID)
@@ -2300,24 +2228,7 @@ bool llvm::UpgradeModuleFlags(Module &M) {
       HasObjCFlag = true;
     if (ID->getString() == "Objective-C Class Properties")
       HasClassProperties = true;
-    // Upgrade PIC/PIE Module Flags. The module flag behavior for these two
-    // field was Error and now they are Max.
-    if (ID->getString() == "PIC Level" || ID->getString() == "PIE Level") {
-      if (auto *Behavior =
-              mdconst::dyn_extract_or_null<ConstantInt>(Op->getOperand(0))) {
-        if (Behavior->getLimitedValue() == Module::Error) {
-          Type *Int32Ty = Type::getInt32Ty(M.getContext());
-          Metadata *Ops[3] = {
-              ConstantAsMetadata::get(ConstantInt::get(Int32Ty, Module::Max)),
-              MDString::get(M.getContext(), ID->getString()),
-              Op->getOperand(2)};
-          ModFlags->setOperand(I, MDNode::get(M.getContext(), Ops));
-          Changed = true;
-        }
-      }
-    }
   }
-
   // "Objective-C Class Properties" is recently added for Objective-C. We
   // upgrade ObjC bitcodes to contain a "Objective-C Class Properties" module
   // flag of value 0, so we can correclty downgrade this flag when trying to
@@ -2326,10 +2237,9 @@ bool llvm::UpgradeModuleFlags(Module &M) {
   if (HasObjCFlag && !HasClassProperties) {
     M.addModuleFlag(llvm::Module::Override, "Objective-C Class Properties",
                     (uint32_t)0);
-    Changed = true;
+    return true;
   }
-
-  return Changed;
+  return false;
 }
 
 static bool isOldLoopArgument(Metadata *MD) {

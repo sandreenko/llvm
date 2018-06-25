@@ -14,7 +14,6 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm-c/Support.h"
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -74,37 +73,19 @@ public:
     return true;
   }
 
-  void *LibLookup(const char *Symbol, DynamicLibrary::SearchOrdering Order) {
-    if (Order & SO_LoadOrder) {
-      for (void *Handle : Handles) {
-        if (void *Ptr = DLSym(Handle, Symbol))
-          return Ptr;
-      }
-    } else {
-      for (void *Handle : llvm::reverse(Handles)) {
-        if (void *Ptr = DLSym(Handle, Symbol))
-          return Ptr;
-      }
-    }
-    return nullptr;
-  }
-
-  void *Lookup(const char *Symbol, DynamicLibrary::SearchOrdering Order) {
-    assert(!((Order & SO_LoadedFirst) && (Order & SO_LoadedLast)) &&
-           "Invalid Ordering");
-
-    if (!Process || (Order & SO_LoadedFirst)) {
-      if (void *Ptr = LibLookup(Symbol, Order))
-        return Ptr;
-    }
+  void *Lookup(const char *Symbol) {
+    // Process handle gets first try.
     if (Process) {
-      // Use OS facilities to search the current binary and all loaded libs.
       if (void *Ptr = DLSym(Process, Symbol))
         return Ptr;
-
-      // Search any libs that might have been skipped because of RTLD_LOCAL.
-      if (Order & SO_LoadedLast) {
-        if (void *Ptr = LibLookup(Symbol, Order))
+#ifndef NDEBUG
+      for (void *Handle : Handles)
+        assert(!DLSym(Handle, Symbol) && "Symbol exists in non process handle");
+#endif
+    } else {
+      // Iterate in reverse, so newer libraries/symbols override older.
+      for (auto &&I = Handles.rbegin(), E = Handles.rend(); I != E; ++I) {
+        if (void *Ptr = DLSym(*I, Symbol))
           return Ptr;
       }
     }
@@ -132,8 +113,6 @@ static llvm::ManagedStatic<llvm::sys::SmartMutex<true>> SymbolsMutex;
 #endif
 
 char DynamicLibrary::Invalid;
-DynamicLibrary::SearchOrdering DynamicLibrary::SearchOrder =
-    DynamicLibrary::SO_Linker;
 
 namespace llvm {
 void *SearchForAddressOfSpecialSymbol(const char *SymbolName) {
@@ -191,7 +170,7 @@ void *DynamicLibrary::SearchForAddressOfSymbol(const char *SymbolName) {
 
     // Now search the libraries.
     if (OpenedHandles.isConstructed()) {
-      if (void *Ptr = OpenedHandles->Lookup(SymbolName, SearchOrder))
+      if (void *Ptr = OpenedHandles->Lookup(SymbolName))
         return Ptr;
     }
   }

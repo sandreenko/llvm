@@ -1,4 +1,4 @@
-//===- llvm/CodeGen/DwarfCompileUnit.cpp - Dwarf Compile Units ------------===//
+//===-- llvm/CodeGen/DwarfCompileUnit.cpp - Dwarf Compile Units -----------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,58 +12,38 @@
 //===----------------------------------------------------------------------===//
 
 #include "DwarfCompileUnit.h"
-#include "AddressPool.h"
-#include "DwarfDebug.h"
 #include "DwarfExpression.h"
-#include "DwarfUnit.h"
-#include "llvm/ADT/None.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/BinaryFormat/Dwarf.h"
-#include "llvm/CodeGen/AsmPrinter.h"
-#include "llvm/CodeGen/DIE.h"
-#include "llvm/CodeGen/LexicalScopes.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
-#include "llvm/MC/MachineLocation.h"
-#include "llvm/MC/MCSection.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCSymbol.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-#include <iterator>
-#include <memory>
-#include <string>
-#include <utility>
 
-using namespace llvm;
+namespace llvm {
 
 DwarfCompileUnit::DwarfCompileUnit(unsigned UID, const DICompileUnit *Node,
                                    AsmPrinter *A, DwarfDebug *DW,
                                    DwarfFile *DWU)
-    : DwarfUnit(dwarf::DW_TAG_compile_unit, Node, A, DW, DWU), UniqueID(UID) {
+    : DwarfUnit(dwarf::DW_TAG_compile_unit, Node, A, DW, DWU), UniqueID(UID),
+      Skeleton(nullptr), BaseAddress(nullptr) {
   insertDIE(Node, &getUnitDie());
   MacroLabelBegin = Asm->createTempSymbol("cu_macro_begin");
 }
 
 /// addLabelAddress - Add a dwarf label attribute data and value using
 /// DW_FORM_addr or DW_FORM_GNU_addr_index.
+///
 void DwarfCompileUnit::addLabelAddress(DIE &Die, dwarf::Attribute Attribute,
                                        const MCSymbol *Label) {
+
   // Don't use the address pool in non-fission or in the skeleton unit itself.
   // FIXME: Once GDB supports this, it's probably worthwhile using the address
   // pool from the skeleton - maybe even in non-fission (possibly fewer
@@ -265,6 +245,17 @@ void DwarfCompileUnit::addRange(RangeSpan Range) {
   CURanges.back().setEnd(Range.getEnd());
 }
 
+DIE::value_iterator
+DwarfCompileUnit::addSectionLabel(DIE &Die, dwarf::Attribute Attribute,
+                                  const MCSymbol *Label, const MCSymbol *Sec) {
+  if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
+    return addLabel(Die, Attribute,
+                    DD->getDwarfVersion() >= 4 ? dwarf::DW_FORM_sec_offset
+                                               : dwarf::DW_FORM_data4,
+                    Label);
+  return addSectionDelta(Die, Attribute, Label, Sec);
+}
+
 void DwarfCompileUnit::initStmtList() {
   // Define start line table label for each Compile Unit.
   MCSymbol *LineTableStartSym =
@@ -356,15 +347,23 @@ void DwarfCompileUnit::constructScopeDIE(
     if (DD->isLexicalScopeDIENull(Scope))
       return;
 
-    bool HasNonScopeChildren = false;
+    unsigned ChildScopeCount;
 
     // We create children here when we know the scope DIE is not going to be
     // null and the children will be added to the scope DIE.
-    createScopeChildrenDIE(Scope, Children, &HasNonScopeChildren);
+    createScopeChildrenDIE(Scope, Children, &ChildScopeCount);
+
+    // Skip imported directives in gmlt-like data.
+    if (!includeMinimalInlineScopes()) {
+      // There is no need to emit empty lexical block DIE.
+      for (const auto *IE : ImportedEntities[DS])
+        Children.push_back(
+            constructImportedEntityDIE(cast<DIImportedEntity>(IE)));
+    }
 
     // If there are only other scopes as children, put them directly in the
     // parent instead, as this scope would serve no purpose.
-    if (!HasNonScopeChildren) {
+    if (Children.size() == ChildScopeCount) {
       FinalChildren.insert(FinalChildren.end(),
                            std::make_move_iterator(Children.begin()),
                            std::make_move_iterator(Children.end()));
@@ -379,6 +378,15 @@ void DwarfCompileUnit::constructScopeDIE(
     ScopeDIE->addChild(std::move(I));
 
   FinalChildren.push_back(std::move(ScopeDIE));
+}
+
+DIE::value_iterator
+DwarfCompileUnit::addSectionDelta(DIE &Die, dwarf::Attribute Attribute,
+                                  const MCSymbol *Hi, const MCSymbol *Lo) {
+  return Die.addValue(DIEValueAllocator, Attribute,
+                      DD->getDwarfVersion() >= 4 ? dwarf::DW_FORM_sec_offset
+                                                 : dwarf::DW_FORM_data4,
+                      new (DIEValueAllocator) DIEDelta(Hi, Lo));
 }
 
 void DwarfCompileUnit::addScopeRangeList(DIE &ScopeDIE,
@@ -500,12 +508,14 @@ DIE *DwarfCompileUnit::constructVariableDIEImpl(const DbgVariable &DV,
   if (const MachineInstr *DVInsn = DV.getMInsn()) {
     assert(DVInsn->getNumOperands() == 4);
     if (DVInsn->getOperand(0).isReg()) {
-      auto RegOp = DVInsn->getOperand(0);
-      auto Op1 = DVInsn->getOperand(1);
+      const MachineOperand RegOp = DVInsn->getOperand(0);
       // If the second operand is an immediate, this is an indirect value.
-      assert((!Op1.isImm() || (Op1.getImm() == 0)) && "unexpected offset");
-      MachineLocation Location(RegOp.getReg(), Op1.isImm());
-      addVariableAddress(DV, *VariableDie, Location);
+      if (DVInsn->getOperand(1).isImm()) {
+        MachineLocation Location(RegOp.getReg(),
+                                 DVInsn->getOperand(1).getImm());
+        addVariableAddress(DV, *VariableDie, Location);
+      } else if (RegOp.getReg())
+        addVariableAddress(DV, *VariableDie, MachineLocation(RegOp.getReg()));
     } else if (DVInsn->getOperand(0).isImm()) {
       // This variable is described by a single constant.
       // Check whether it has a DIExpression.
@@ -567,26 +577,19 @@ DIE *DwarfCompileUnit::constructVariableDIE(DbgVariable &DV,
 
 DIE *DwarfCompileUnit::createScopeChildrenDIE(LexicalScope *Scope,
                                               SmallVectorImpl<DIE *> &Children,
-                                              bool *HasNonScopeChildren) {
-  assert(Children.empty());
+                                              unsigned *ChildScopeCount) {
   DIE *ObjectPointer = nullptr;
 
   for (DbgVariable *DV : DU->getScopeVariables().lookup(Scope))
     Children.push_back(constructVariableDIE(*DV, *Scope, ObjectPointer));
 
-  // Skip imported directives in gmlt-like data.
-  if (!includeMinimalInlineScopes()) {
-    // There is no need to emit empty lexical block DIE.
-    for (const auto *IE : ImportedEntities[Scope->getScopeNode()])
-      Children.push_back(
-          constructImportedEntityDIE(cast<DIImportedEntity>(IE)));
-  }
-
-  if (HasNonScopeChildren)
-    *HasNonScopeChildren = !Children.empty();
+  unsigned ChildCountWithoutScopes = Children.size();
 
   for (LexicalScope *LS : Scope->getChildren())
     constructScopeDIE(LS, Children);
+
+  if (ChildScopeCount)
+    *ChildScopeCount = Children.size() - ChildCountWithoutScopes;
 
   return ObjectPointer;
 }
@@ -681,9 +684,8 @@ DIE *DwarfCompileUnit::constructImportedEntityDIE(
   else
     EntityDie = getDIE(Entity);
   assert(EntityDie);
-  auto *File = Module->getFile();
-  addSourceLine(*IMDie, Module->getLine(), File ? File->getFilename() : "",
-                File ? File->getDirectory() : "");
+  addSourceLine(*IMDie, Module->getLine(), Module->getScope()->getFilename(),
+                Module->getScope()->getDirectory());
   addDIEEntry(*IMDie, dwarf::DW_AT_import, *EntityDie);
   StringRef Name = Module->getName();
   if (!Name.empty())
@@ -737,7 +739,7 @@ DbgVariable *DwarfCompileUnit::getExistingAbstractVariable(
 void DwarfCompileUnit::createAbstractVariable(const DILocalVariable *Var,
                                         LexicalScope *Scope) {
   assert(Scope && Scope->isAbstractScope());
-  auto AbsDbgVariable = llvm::make_unique<DbgVariable>(Var, /* IA */ nullptr);
+  auto AbsDbgVariable = make_unique<DbgVariable>(Var, /* IA */ nullptr);
   DU->addScopeVariable(Scope, AbsDbgVariable.get());
   getAbstractVariables()[Var] = std::move(AbsDbgVariable);
 }
@@ -817,7 +819,12 @@ void DwarfCompileUnit::addAddress(DIE &Die, dwarf::Attribute Attribute,
   if (Location.isIndirect())
     DwarfExpr.setMemoryLocationKind();
 
-  DIExpressionCursor Cursor({});
+  SmallVector<uint64_t, 8> Ops;
+  if (Location.isIndirect() && Location.getOffset()) {
+    Ops.push_back(dwarf::DW_OP_plus_uconst);
+    Ops.push_back(Location.getOffset());
+  }
+  DIExpressionCursor Cursor(Ops);
   const TargetRegisterInfo &TRI = *Asm->MF->getSubtarget().getRegisterInfo();
   if (!DwarfExpr.addMachineRegExpression(TRI, Cursor, Location.getReg()))
     return;
@@ -841,7 +848,13 @@ void DwarfCompileUnit::addComplexAddress(const DbgVariable &DV, DIE &Die,
   if (Location.isIndirect())
     DwarfExpr.setMemoryLocationKind();
 
-  DIExpressionCursor Cursor(DIExpr);
+  SmallVector<uint64_t, 8> Ops;
+  if (Location.isIndirect() && Location.getOffset()) {
+    Ops.push_back(dwarf::DW_OP_plus_uconst);
+    Ops.push_back(Location.getOffset());
+  }
+  Ops.append(DIExpr->elements_begin(), DIExpr->elements_end());
+  DIExpressionCursor Cursor(Ops);
   const TargetRegisterInfo &TRI = *Asm->MF->getSubtarget().getRegisterInfo();
   if (!DwarfExpr.addMachineRegExpression(TRI, Cursor, Location.getReg()))
     return;
@@ -898,3 +911,4 @@ bool DwarfCompileUnit::includeMinimalInlineScopes() const {
   return getCUNode()->getEmissionKind() == DICompileUnit::LineTablesOnly ||
          (DD->useSplitDwarf() && !Skeleton);
 }
+} // end llvm namespace

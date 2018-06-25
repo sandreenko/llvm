@@ -1,4 +1,4 @@
-//===- DebugCrossImpSubsection.cpp ----------------------------------------===//
+//===- DebugCrossImpSubsection.cpp ------------------------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,21 +8,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/DebugCrossImpSubsection.h"
-#include "llvm/ADT/ArrayRef.h"
+
 #include "llvm/DebugInfo/CodeView/CodeViewError.h"
 #include "llvm/DebugInfo/CodeView/DebugStringTableSubsection.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
-#include "llvm/Support/Endian.h"
-#include "llvm/Support/Error.h"
-#include <algorithm>
-#include <cstdint>
-#include <utility>
-#include <vector>
 
 using namespace llvm;
 using namespace llvm::codeview;
 
+namespace llvm {
 Error VarStreamArrayExtractor<CrossModuleImportItem>::
 operator()(BinaryStreamRef Stream, uint32_t &Len,
            codeview::CrossModuleImportItem &Item) {
@@ -40,6 +33,7 @@ operator()(BinaryStreamRef Stream, uint32_t &Len,
   if (auto EC = Reader.readArray(Item.Imports, Item.Header->Count))
     return EC;
   return Error::success();
+}
 }
 
 Error DebugCrossModuleImportsSubsectionRef::initialize(

@@ -379,11 +379,10 @@ void ThreadSanitizer::chooseInstructionsToInstrument(
 }
 
 static bool isAtomic(Instruction *I) {
-  // TODO: Ask TTI whether synchronization scope is between threads.
   if (LoadInst *LI = dyn_cast<LoadInst>(I))
-    return LI->isAtomic() && LI->getSyncScopeID() != SyncScope::SingleThread;
+    return LI->isAtomic() && LI->getSynchScope() == CrossThread;
   if (StoreInst *SI = dyn_cast<StoreInst>(I))
-    return SI->isAtomic() && SI->getSyncScopeID() != SyncScope::SingleThread;
+    return SI->isAtomic() && SI->getSynchScope() == CrossThread;
   if (isa<AtomicRMWInst>(I))
     return true;
   if (isa<AtomicCmpXchgInst>(I))
@@ -677,7 +676,7 @@ bool ThreadSanitizer::instrumentAtomic(Instruction *I, const DataLayout &DL) {
     I->eraseFromParent();
   } else if (FenceInst *FI = dyn_cast<FenceInst>(I)) {
     Value *Args[] = {createOrdering(&IRB, FI->getOrdering())};
-    Function *F = FI->getSyncScopeID() == SyncScope::SingleThread ?
+    Function *F = FI->getSynchScope() == SingleThread ?
         TsanAtomicSignalFence : TsanAtomicThreadFence;
     CallInst *C = CallInst::Create(F, Args);
     ReplaceInstWithInst(I, C);

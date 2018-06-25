@@ -23,7 +23,7 @@
 /// This pass traverses all the instructions in a program in top-down order.
 /// In contrast to the instruction scheduling passes, this pass never resets
 /// the hazard recognizer to ensure it can correctly handles noop hazards at
-/// the beginning of blocks.
+/// the begining of blocks.
 //
 //===----------------------------------------------------------------------===//
 

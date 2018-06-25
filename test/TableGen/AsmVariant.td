@@ -31,7 +31,6 @@ def foo : Instruction {
   let InOperandList = (ins);
   let AsmString = "foo";
   let AsmVariantName = "Foo";
-  let Namespace = "Arch";
 }
 
 def BarAlias : InstAlias<"bar", (foo)> {

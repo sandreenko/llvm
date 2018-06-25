@@ -15,12 +15,9 @@
 #include "llvm/ObjectYAML/MachOYAML.h"
 #include "llvm/ObjectYAML/WasmYAML.h"
 #include "llvm/Support/YAMLTraits.h"
-#include <memory>
 
 namespace llvm {
 namespace yaml {
-
-class IO;
 
 struct YamlObjectFile {
   std::unique_ptr<ELFYAML::Object> Elf;
@@ -34,7 +31,7 @@ template <> struct MappingTraits<YamlObjectFile> {
   static void mapping(IO &IO, YamlObjectFile &ObjectFile);
 };
 
-} // end namespace yaml
-} // end namespace llvm
+} // namespace yaml
+} // namespace llvm
 
-#endif // LLVM_OBJECTYAML_OBJECTYAML_H
+#endif

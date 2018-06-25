@@ -318,8 +318,7 @@ writeSymbolTable(raw_fd_ostream &Out, object::Archive::Kind Kind,
         continue;
       if (!(Symflags & object::SymbolRef::SF_Global))
         continue;
-      if (Symflags & object::SymbolRef::SF_Undefined &&
-          !(Symflags & object::SymbolRef::SF_Indirect))
+      if (Symflags & object::SymbolRef::SF_Undefined)
         continue;
 
       unsigned NameOffset = NameOS.tell();
@@ -376,8 +375,9 @@ writeSymbolTable(raw_fd_ostream &Out, object::Archive::Kind Kind,
   return BodyStartOffset + 4;
 }
 
-std::error_code
-llvm::writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
+std::pair<StringRef, std::error_code>
+llvm::writeArchive(StringRef ArcName,
+                   std::vector<NewArchiveMember> &NewMembers,
                    bool WriteSymtab, object::Archive::Kind Kind,
                    bool Deterministic, bool Thin,
                    std::unique_ptr<MemoryBuffer> OldArchiveBuf) {
@@ -386,7 +386,7 @@ llvm::writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
   int TmpArchiveFD;
   if (auto EC = sys::fs::createUniqueFile(ArcName + ".temp-archive-%%%%%%%.a",
                                           TmpArchiveFD, TmpArchive))
-    return EC;
+    return std::make_pair(ArcName, EC);
 
   tool_output_file Output(TmpArchive, TmpArchiveFD);
   raw_fd_ostream &Out = Output.os();
@@ -402,7 +402,7 @@ llvm::writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
     ErrorOr<unsigned> MemberReferenceOffsetOrErr = writeSymbolTable(
         Out, Kind, NewMembers, MemberOffsetRefs, Deterministic);
     if (auto EC = MemberReferenceOffsetOrErr.getError())
-      return EC;
+      return std::make_pair(ArcName, EC);
     MemberReferenceOffset = MemberReferenceOffsetOrErr.get();
   }
 
@@ -464,5 +464,5 @@ llvm::writeArchive(StringRef ArcName, std::vector<NewArchiveMember> &NewMembers,
   OldArchiveBuf.reset();
 
   sys::fs::rename(TmpArchive, ArcName);
-  return std::error_code();
+  return std::make_pair("", std::error_code());
 }

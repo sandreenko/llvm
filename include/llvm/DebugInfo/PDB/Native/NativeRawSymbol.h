@@ -1,4 +1,4 @@
-//==- NativeRawSymbol.h - Native implementation of IPDBRawSymbol -*- C++ -*-==//
+//===- NativeRawSymbol.h - Native implementation of IPDBRawSymbol - C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -11,21 +11,15 @@
 #define LLVM_DEBUGINFO_PDB_NATIVE_NATIVERAWSYMBOL_H
 
 #include "llvm/DebugInfo/PDB/IPDBRawSymbol.h"
-#include <cstdint>
-#include <memory>
 
 namespace llvm {
 namespace pdb {
 
 class NativeSession;
 
-typedef uint32_t SymIndexId;
-
 class NativeRawSymbol : public IPDBRawSymbol {
 public:
-  NativeRawSymbol(NativeSession &PDBSession, SymIndexId SymbolId);
-
-  virtual std::unique_ptr<NativeRawSymbol> clone() const = 0;
+  explicit NativeRawSymbol(NativeSession &PDBSession);
 
   void dump(raw_ostream &OS, int Indent) const override;
 
@@ -40,7 +34,7 @@ public:
   std::unique_ptr<IPDBEnumSymbols>
     findInlineFramesByRVA(uint32_t RVA) const override;
 
-  void getDataBytes(SmallVector<uint8_t, 32> &Bytes) const override;
+  void getDataBytes(llvm::SmallVector<uint8_t, 32> &Bytes) const override;
   void getFrontEndVersion(VersionInfo &Version) const override;
   void getBackEndVersion(VersionInfo &Version) const override;
   PDB_MemberAccess getAccess() const override;
@@ -111,7 +105,7 @@ public:
   getVirtualBaseTableType() const override;
   PDB_DataKind getDataKind() const override;
   PDB_SymType getSymTag() const override;
-  codeview::GUID getGuid() const override;
+  PDB_UniqueId getGuid() const override;
   int32_t getOffset() const override;
   int32_t getThisAdjust() const override;
   int32_t getVirtualBasePointerOffset() const override;
@@ -207,10 +201,9 @@ public:
 
 protected:
   NativeSession &Session;
-  SymIndexId SymbolId;
 };
 
-} // end namespace pdb
-} // end namespace llvm
+}
+}
 
-#endif // LLVM_DEBUGINFO_PDB_NATIVE_NATIVERAWSYMBOL_H
+#endif

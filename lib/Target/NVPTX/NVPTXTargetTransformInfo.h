@@ -61,8 +61,7 @@ public:
       TTI::OperandValueProperties Opd2PropInfo = TTI::OP_None,
       ArrayRef<const Value *> Args = ArrayRef<const Value *>());
 
-  void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
-                               TTI::UnrollingPreferences &UP);
+  void getUnrollingPreferences(Loop *L, TTI::UnrollingPreferences &UP);
 };
 
 } // end namespace llvm

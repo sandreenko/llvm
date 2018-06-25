@@ -402,7 +402,7 @@ unsigned AVRInstrInfo::insertBranch(MachineBasicBlock &MBB,
                                     ArrayRef<MachineOperand> Cond,
                                     const DebugLoc &DL,
                                     int *BytesAdded) const {
-  if (BytesAdded) *BytesAdded = 0;
+  assert(!BytesAdded && "code size not handled");
 
   // Shouldn't be a fall through.
   assert(TBB && "insertBranch must not be told to insert a fallthrough");
@@ -411,24 +411,19 @@ unsigned AVRInstrInfo::insertBranch(MachineBasicBlock &MBB,
 
   if (Cond.empty()) {
     assert(!FBB && "Unconditional branch with multiple successors!");
-    auto &MI = *BuildMI(&MBB, DL, get(AVR::RJMPk)).addMBB(TBB);
-    if (BytesAdded)
-      *BytesAdded += getInstSizeInBytes(MI);
+    BuildMI(&MBB, DL, get(AVR::RJMPk)).addMBB(TBB);
     return 1;
   }
 
   // Conditional branch.
   unsigned Count = 0;
   AVRCC::CondCodes CC = (AVRCC::CondCodes)Cond[0].getImm();
-  auto &CondMI = *BuildMI(&MBB, DL, getBrCond(CC)).addMBB(TBB);
-
-  if (BytesAdded) *BytesAdded += getInstSizeInBytes(CondMI);
+  BuildMI(&MBB, DL, getBrCond(CC)).addMBB(TBB);
   ++Count;
 
   if (FBB) {
     // Two-way Conditional branch. Insert the second branch.
-    auto &MI = *BuildMI(&MBB, DL, get(AVR::RJMPk)).addMBB(FBB);
-    if (BytesAdded) *BytesAdded += getInstSizeInBytes(MI);
+    BuildMI(&MBB, DL, get(AVR::RJMPk)).addMBB(FBB);
     ++Count;
   }
 
@@ -437,7 +432,7 @@ unsigned AVRInstrInfo::insertBranch(MachineBasicBlock &MBB,
 
 unsigned AVRInstrInfo::removeBranch(MachineBasicBlock &MBB,
                                     int *BytesRemoved) const {
-  if (BytesRemoved) *BytesRemoved = 0;
+  assert(!BytesRemoved && "code size not handled");
 
   MachineBasicBlock::iterator I = MBB.end();
   unsigned Count = 0;
@@ -455,7 +450,6 @@ unsigned AVRInstrInfo::removeBranch(MachineBasicBlock &MBB,
     }
 
     // Remove the branch.
-    if (BytesRemoved) *BytesRemoved += getInstSizeInBytes(*I);
     I->eraseFromParent();
     I = MBB.end();
     ++Count;
@@ -497,62 +491,6 @@ unsigned AVRInstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
     return TII.getInlineAsmLength(MI.getOperand(0).getSymbolName(),
                                   *TM.getMCAsmInfo());
   }
-  }
-}
-
-MachineBasicBlock *
-AVRInstrInfo::getBranchDestBlock(const MachineInstr &MI) const {
-  switch (MI.getOpcode()) {
-  default:
-    llvm_unreachable("unexpected opcode!");
-  case AVR::JMPk:
-  case AVR::CALLk:
-  case AVR::RCALLk:
-  case AVR::RJMPk:
-  case AVR::BREQk:
-  case AVR::BRNEk:
-  case AVR::BRSHk:
-  case AVR::BRLOk:
-  case AVR::BRMIk:
-  case AVR::BRPLk:
-  case AVR::BRGEk:
-  case AVR::BRLTk:
-    return MI.getOperand(0).getMBB();
-  case AVR::BRBSsk:
-  case AVR::BRBCsk:
-    return MI.getOperand(1).getMBB();
-  case AVR::SBRCRrB:
-  case AVR::SBRSRrB:
-  case AVR::SBICAb:
-  case AVR::SBISAb:
-    llvm_unreachable("unimplemented branch instructions");
-  }
-}
-
-bool AVRInstrInfo::isBranchOffsetInRange(unsigned BranchOp,
-                                         int64_t BrOffset) const {
-
-  switch (BranchOp) {
-  default:
-    llvm_unreachable("unexpected opcode!");
-  case AVR::JMPk:
-  case AVR::CALLk:
-    assert(BrOffset >= 0 && "offset must be absolute address");
-    return isUIntN(16, BrOffset);
-  case AVR::RCALLk:
-  case AVR::RJMPk:
-    return isIntN(13, BrOffset);
-  case AVR::BRBSsk:
-  case AVR::BRBCsk:
-  case AVR::BREQk:
-  case AVR::BRNEk:
-  case AVR::BRSHk:
-  case AVR::BRLOk:
-  case AVR::BRMIk:
-  case AVR::BRPLk:
-  case AVR::BRGEk:
-  case AVR::BRLTk:
-    return isIntN(7, BrOffset);
   }
 }
 

@@ -94,7 +94,7 @@ struct WasmFunction {
 };
 
 struct WasmDataSegment {
-  uint32_t MemoryIndex;
+  uint32_t Index;
   WasmInitExpr Offset;
   ArrayRef<uint8_t> Content;
 };
@@ -107,14 +107,9 @@ struct WasmElemSegment {
 
 struct WasmRelocation {
   uint32_t Type;   // The type of the relocation.
-  uint32_t Index;  // Index into function to global index space.
+  int32_t Index;   // Index into function to global index space.
   uint64_t Offset; // Offset from the start of the section.
   int64_t Addend;  // A value to add to the symbol.
-};
-
-struct WasmLinkingData {
-  uint32_t DataSize;
-  uint32_t DataAlignment;
 };
 
 enum : unsigned {
@@ -180,10 +175,8 @@ enum class ValType {
 
 // Linking metadata kinds.
 enum : unsigned {
-  WASM_STACK_POINTER  = 0x1,
-  WASM_SYMBOL_INFO    = 0x2,
-  WASM_DATA_SIZE      = 0x3,
-  WASM_DATA_ALIGNMENT = 0x4,
+  WASM_STACK_POINTER = 0x1,
+  WASM_SYMBOL_INFO  = 0x2,
 };
 
 enum : unsigned {

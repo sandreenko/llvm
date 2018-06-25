@@ -41,8 +41,7 @@ namespace fuzzer {
 ExternalFunctions::ExternalFunctions() {
 #define EXT_FUNC(NAME, RETURN_TYPE, FUNC_SIG, WARN)                            \
   this->NAME = ::NAME;                                                         \
-  CheckFnPtr(reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(::NAME)),    \
-             #NAME, WARN);
+  CheckFnPtr((void *)::NAME, #NAME, WARN);
 
 #include "FuzzerExtFunctions.def"
 

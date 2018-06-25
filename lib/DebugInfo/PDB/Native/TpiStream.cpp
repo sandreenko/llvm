@@ -14,6 +14,7 @@
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/DebugInfo/MSF/MappedBlockStream.h"
 #include "llvm/DebugInfo/PDB/Native/PDBFile.h"
+#include "llvm/DebugInfo/PDB/Native/PDBTypeServerHandler.h"
 #include "llvm/DebugInfo/PDB/Native/RawConstants.h"
 #include "llvm/DebugInfo/PDB/Native/RawError.h"
 #include "llvm/DebugInfo/PDB/Native/RawTypes.h"
@@ -65,13 +66,7 @@ Error TpiStream::reload() {
                                 "TPI Stream Invalid number of hash buckets.");
 
   // The actual type records themselves come from this stream
-  if (auto EC =
-          Reader.readSubstream(TypeRecordsSubstream, Header->TypeRecordBytes))
-    return EC;
-
-  BinaryStreamReader RecordReader(TypeRecordsSubstream.StreamData);
-  if (auto EC =
-          RecordReader.readArray(TypeRecords, TypeRecordsSubstream.size()))
+  if (auto EC = Reader.readArray(TypeRecords, Header->TypeRecordBytes))
     return EC;
 
   // Hash indices, hash values, etc come from the hash stream.
@@ -139,10 +134,6 @@ uint16_t TpiStream::getTypeHashStreamAuxIndex() const {
 
 uint32_t TpiStream::getNumHashBuckets() const { return Header->NumHashBuckets; }
 uint32_t TpiStream::getHashKeySize() const { return Header->HashKeySize; }
-
-BinarySubstreamRef TpiStream::getTypeRecordsSubstream() const {
-  return TypeRecordsSubstream;
-}
 
 FixedStreamArray<support::ulittle32_t> TpiStream::getHashValues() const {
   return HashValues;

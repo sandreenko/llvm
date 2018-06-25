@@ -23,24 +23,27 @@ class MachineDominanceFrontier : public MachineFunctionPass {
   ForwardDominanceFrontierBase<MachineBasicBlock> Base;
 
 public:
- using DomTreeT = DomTreeBase<MachineBasicBlock>;
- using DomTreeNodeT = DomTreeNodeBase<MachineBasicBlock>;
- using DomSetType = DominanceFrontierBase<MachineBasicBlock, false>::DomSetType;
- using iterator = DominanceFrontierBase<MachineBasicBlock, false>::iterator;
- using const_iterator =
-     DominanceFrontierBase<MachineBasicBlock, false>::const_iterator;
+  using DomTreeT = DominatorTreeBase<MachineBasicBlock>;
+  using DomTreeNodeT = DomTreeNodeBase<MachineBasicBlock>;
+  using DomSetType = DominanceFrontierBase<MachineBasicBlock>::DomSetType;
+  using iterator = DominanceFrontierBase<MachineBasicBlock>::iterator;
+  using const_iterator =
+      DominanceFrontierBase<MachineBasicBlock>::const_iterator;
 
- MachineDominanceFrontier(const MachineDominanceFrontier &) = delete;
- MachineDominanceFrontier &operator=(const MachineDominanceFrontier &) = delete;
+  MachineDominanceFrontier(const MachineDominanceFrontier &) = delete;
+  MachineDominanceFrontier &
+  operator=(const MachineDominanceFrontier &) = delete;
 
- static char ID;
+  static char ID;
 
- MachineDominanceFrontier();
+  MachineDominanceFrontier();
 
- DominanceFrontierBase<MachineBasicBlock, false> &getBase() { return Base; }
+  DominanceFrontierBase<MachineBasicBlock> &getBase() {
+    return Base;
+  }
 
-  const SmallVectorImpl<MachineBasicBlock *> &getRoots() const {
-   return Base.getRoots();
+  inline const std::vector<MachineBasicBlock*> &getRoots() const {
+    return Base.getRoots();
   }
 
   MachineBasicBlock *getRoot() const {
@@ -95,7 +98,7 @@ public:
     return Base.compareDomSet(DS1, DS2);
   }
 
-  bool compare(DominanceFrontierBase<MachineBasicBlock, false> &Other) const {
+  bool compare(DominanceFrontierBase<MachineBasicBlock> &Other) const {
     return Base.compare(Other);
   }
 

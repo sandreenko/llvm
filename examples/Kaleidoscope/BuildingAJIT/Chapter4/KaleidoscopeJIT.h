@@ -73,11 +73,11 @@ class KaleidoscopeJIT {
 private:
   std::unique_ptr<TargetMachine> TM;
   const DataLayout DL;
-  RTDyldObjectLinkingLayer ObjectLayer;
-  IRCompileLayer<decltype(ObjectLayer), SimpleCompiler> CompileLayer;
+  RTDyldObjectLinkingLayer<> ObjectLayer;
+  IRCompileLayer<decltype(ObjectLayer)> CompileLayer;
 
   using OptimizeFunction =
-      std::function<std::shared_ptr<Module>(std::shared_ptr<Module>)>;
+      std::function<std::unique_ptr<Module>(std::unique_ptr<Module>)>;
 
   IRTransformLayer<decltype(CompileLayer), OptimizeFunction> OptimizeLayer;
 
@@ -85,15 +85,14 @@ private:
   std::unique_ptr<IndirectStubsManager> IndirectStubsMgr;
 
 public:
-  using ModuleHandle = decltype(OptimizeLayer)::ModuleHandleT;
+  using ModuleHandle = decltype(OptimizeLayer)::ModuleSetHandleT;
 
   KaleidoscopeJIT()
       : TM(EngineBuilder().selectTarget()),
         DL(TM->createDataLayout()),
-        ObjectLayer([]() { return std::make_shared<SectionMemoryManager>(); }),
         CompileLayer(ObjectLayer, SimpleCompiler(*TM)),
         OptimizeLayer(CompileLayer,
-                      [this](std::shared_ptr<Module> M) {
+                      [this](std::unique_ptr<Module> M) {
                         return optimizeModule(std::move(M));
                       }),
         CompileCallbackMgr(
@@ -126,10 +125,15 @@ public:
           return JITSymbol(nullptr);
         });
 
+    // Build a singleton module set to hold our module.
+    std::vector<std::unique_ptr<Module>> Ms;
+    Ms.push_back(std::move(M));
+
     // Add the set to the JIT with the resolver we created above and a newly
     // created SectionMemoryManager.
-    return cantFail(OptimizeLayer.addModule(std::move(M),
-                                            std::move(Resolver)));
+    return OptimizeLayer.addModuleSet(std::move(Ms),
+                                      make_unique<SectionMemoryManager>(),
+                                      std::move(Resolver));
   }
 
   Error addFunctionAST(std::unique_ptr<FunctionAST> FnAST) {
@@ -175,7 +179,7 @@ public:
         addModule(std::move(M));
         auto Sym = findSymbol(SharedFnAST->getName() + "$impl");
         assert(Sym && "Couldn't find compiled function?");
-        JITTargetAddress SymAddr = cantFail(Sym.getAddress());
+        JITTargetAddress SymAddr = Sym.getAddress();
         if (auto Err =
               IndirectStubsMgr->updatePointer(mangle(SharedFnAST->getName()),
                                               SymAddr)) {
@@ -195,7 +199,7 @@ public:
   }
 
   void removeModule(ModuleHandle H) {
-    cantFail(OptimizeLayer.removeModule(H));
+    OptimizeLayer.removeModuleSet(H);
   }
 
 private:
@@ -206,7 +210,7 @@ private:
     return MangledNameStream.str();
   }
 
-  std::shared_ptr<Module> optimizeModule(std::shared_ptr<Module> M) {
+  std::unique_ptr<Module> optimizeModule(std::unique_ptr<Module> M) {
     // Create a function pass manager.
     auto FPM = llvm::make_unique<legacy::FunctionPassManager>(M.get());
 

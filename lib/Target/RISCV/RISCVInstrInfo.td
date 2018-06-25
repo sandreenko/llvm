@@ -13,16 +13,7 @@
 
 include "RISCVInstrFormats.td"
 
-class SImmAsmOperand<int width>
-  : AsmOperandClass {
-  let Name = "SImm" # width;
-  let RenderMethod = "addImmOperands";
-  let DiagnosticType = !strconcat("Invalid", Name);
-}
-
-def simm12 : Operand<i32> {
-  let ParserMatchClass = SImmAsmOperand<12>;
-}
+def simm12 : Operand<i32>;
 
 // As noted in RISCVRegisterInfo.td, the hope is that support for
 // variable-sized register classes will mean that instruction definitions do

@@ -59,7 +59,7 @@ def FPU2 : SchedWrite;
 def DFU  : SchedWrite;
 def DFU2 : SchedWrite;
 
-// Vector sub units (z13 and later)
+// Vector sub units (z13)
 def VecBF     : SchedWrite;
 def VecBF2    : SchedWrite;
 def VecDF     : SchedWrite;
@@ -75,7 +75,6 @@ def VecXsPm   : SchedWrite;
 def VBU         : SchedWrite;
 
 
-include "SystemZScheduleZ14.td"
 include "SystemZScheduleZ13.td"
 include "SystemZScheduleZEC12.td"
 include "SystemZScheduleZ196.td"

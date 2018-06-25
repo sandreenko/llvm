@@ -86,7 +86,7 @@ public:
 
   /// getInstNamespace - Return the target-specific instruction namespace.
   ///
-  StringRef getInstNamespace() const;
+  std::string getInstNamespace() const;
 
   /// getInstructionSet - Return the InstructionSet object.
   ///

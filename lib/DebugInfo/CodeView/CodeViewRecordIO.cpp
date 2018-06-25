@@ -168,19 +168,18 @@ Error CodeViewRecordIO::mapStringZ(StringRef &Value) {
   return Error::success();
 }
 
-Error CodeViewRecordIO::mapGuid(GUID &Guid) {
+Error CodeViewRecordIO::mapGuid(StringRef &Guid) {
   constexpr uint32_t GuidSize = 16;
   if (maxFieldLength() < GuidSize)
     return make_error<CodeViewError>(cv_error_code::insufficient_buffer);
 
   if (isWriting()) {
-    if (auto EC = Writer->writeBytes(Guid.Guid))
+    assert(Guid.size() == 16 && "Invalid Guid Size!");
+    if (auto EC = Writer->writeFixedString(Guid))
       return EC;
   } else {
-    ArrayRef<uint8_t> GuidBytes;
-    if (auto EC = Reader->readBytes(GuidBytes, GuidSize))
+    if (auto EC = Reader->readFixedString(Guid, 16))
       return EC;
-    memcpy(Guid.Guid, GuidBytes.data(), GuidSize);
   }
   return Error::success();
 }

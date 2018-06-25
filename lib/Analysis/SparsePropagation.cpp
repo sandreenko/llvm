@@ -13,21 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/SparsePropagation.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/IR/Argument.h"
-#include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/InstrTypes.h"
-#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/User.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-
 using namespace llvm;
 
 #define DEBUG_TYPE "sparseprop"
@@ -36,7 +26,7 @@ using namespace llvm;
 //                  AbstractLatticeFunction Implementation
 //===----------------------------------------------------------------------===//
 
-AbstractLatticeFunction::~AbstractLatticeFunction() = default;
+AbstractLatticeFunction::~AbstractLatticeFunction() {}
 
 /// PrintValue - Render the specified lattice value to the specified stream.
 void AbstractLatticeFunction::PrintValue(LatticeVal V, raw_ostream &OS) {
@@ -59,6 +49,7 @@ void AbstractLatticeFunction::PrintValue(LatticeVal V, raw_ostream &OS) {
 /// map yet.   This function is necessary because not all values should start
 /// out in the underdefined state... Arguments should be overdefined, and
 /// constants should be marked as constants.
+///
 SparseSolver::LatticeVal SparseSolver::getOrInitValueState(Value *V) {
   DenseMap<Value*, LatticeVal>::iterator I = ValueState.find(V);
   if (I != ValueState.end()) return I->second;  // Common case, in the map
@@ -118,10 +109,12 @@ void SparseSolver::markEdgeExecutable(BasicBlock *Source, BasicBlock *Dest) {
     // because they have potentially new operands.
     for (BasicBlock::iterator I = Dest->begin(); isa<PHINode>(I); ++I)
       visitPHINode(*cast<PHINode>(I));
+    
   } else {
     MarkBlockExecutable(Dest);
   }
 }
+
 
 /// getFeasibleSuccessors - Return a vector of booleans to indicate which
 /// successors are reachable from a given terminator instruction.
@@ -206,6 +199,7 @@ void SparseSolver::getFeasibleSuccessors(TerminatorInst &TI,
   Succs[Case.getSuccessorIndex()] = true;
 }
 
+
 /// isEdgeFeasible - Return true if the control flow edge from the 'From'
 /// basic block to the 'To' basic block is currently feasible...
 bool SparseSolver::isEdgeFeasible(BasicBlock *From, BasicBlock *To,
@@ -279,6 +273,7 @@ void SparseSolver::visitPHINode(PHINode &PN) {
   UpdateState(PN, PNIV);
 }
 
+
 void SparseSolver::visitInst(Instruction &I) {
   // PHIs are handled by the propagation logic, they are never passed into the
   // transfer functions.
@@ -349,3 +344,4 @@ void SparseSolver::Print(Function &F, raw_ostream &OS) const {
     OS << "\n";
   }
 }
+

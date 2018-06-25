@@ -12,6 +12,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include <cstdint>
+#include <utility>
 
 namespace llvm {
 
@@ -27,7 +28,7 @@ struct RelocAddrEntry {
 /// dwarf where we expect relocated values. This adds a bit of complexity to the
 /// dwarf parsing/extraction at the benefit of not allocating memory for the
 /// entire size of the debug info sections.
-using RelocAddrMap = DenseMap<uint64_t, RelocAddrEntry>;
+typedef DenseMap<uint64_t, RelocAddrEntry> RelocAddrMap;
 
 } // end namespace llvm
 

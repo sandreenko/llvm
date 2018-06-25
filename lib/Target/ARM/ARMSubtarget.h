@@ -16,15 +16,11 @@
 
 #include "ARMBaseInstrInfo.h"
 #include "ARMBaseRegisterInfo.h"
-#include "ARMConstantPoolValue.h"
 #include "ARMFrameLowering.h"
 #include "ARMISelLowering.h"
 #include "ARMSelectionDAGInfo.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/CodeGen/GlobalISel/CallLowering.h"
-#include "llvm/CodeGen/GlobalISel/InstructionSelector.h"
-#include "llvm/CodeGen/GlobalISel/LegalizerInfo.h"
-#include "llvm/CodeGen/GlobalISel/RegisterBankInfo.h"
+#include "llvm/CodeGen/GlobalISel/GISelAccessor.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include "llvm/MC/MCSchedule.h"
@@ -54,12 +50,10 @@ protected:
     CortexA35,
     CortexA5,
     CortexA53,
-    CortexA55,
     CortexA57,
     CortexA7,
     CortexA72,
     CortexA73,
-    CortexA75,
     CortexA8,
     CortexA9,
     CortexM3,
@@ -104,7 +98,6 @@ protected:
     ARMv7ve,
     ARMv81a,
     ARMv82a,
-    ARMv83a,
     ARMv8a,
     ARMv8mBaseline,
     ARMv8mMainline,
@@ -150,7 +143,6 @@ protected:
   bool HasV8Ops = false;
   bool HasV8_1aOps = false;
   bool HasV8_2aOps = false;
-  bool HasV8_3aOps = false;
   bool HasV8MBaselineOps = false;
   bool HasV8MMainlineOps = false;
 
@@ -161,9 +153,6 @@ protected:
   bool HasVFPv4 = false;
   bool HasFPARMv8 = false;
   bool HasNEON = false;
-
-  /// HasDotProd - True if the ARMv8.2A dot product instructions are supported.
-  bool HasDotProd = false;
 
   /// UseNEONForSinglePrecisionFP - if the NEONFP attribute has been
   /// specified. Use the method useNEONForSinglePrecisionFP() to
@@ -190,13 +179,6 @@ protected:
 
   /// UseSoftFloat - True if we're using software floating point features.
   bool UseSoftFloat = false;
-
-  /// UseMISched - True if MachineScheduler should be used for this subtarget.
-  bool UseMISched = false;
-
-  /// DisablePostRAScheduler - False if scheduling should happen again after
-  /// register allocation.
-  bool DisablePostRAScheduler = false;
 
   /// HasThumb2 - True if Thumb2 instructions are supported.
   bool HasThumb2 = false;
@@ -263,11 +245,6 @@ protected:
   /// HasRetAddrStack - Some processors perform return stack prediction. CodeGen should
   /// avoid issue "normal" call instructions to callees which do not return.
   bool HasRetAddrStack = false;
-
-  /// HasBranchPredictor - True if the subtarget has a branch predictor. Having
-  /// a branch predictor or not changes the expected cost of taking a branch
-  /// which affects the choice of whether to use predicated instructions.
-  bool HasBranchPredictor = true;
 
   /// HasMPExtension - True if the subtarget supports Multiprocessing
   /// extension (ARMv7 only).
@@ -345,9 +322,6 @@ protected:
 
   /// If true, VFP/NEON VMLA/VMLS have special RAW hazards.
   bool HasVMLxHazards = false;
-
-  // If true, read thread pointer from coprocessor register.
-  bool ReadTPHard = false;
 
   /// If true, VMOVRS, VMOVSR and VMOVS will be converted from VFP to NEON.
   bool UseNEONForFPMovs = false;
@@ -434,6 +408,9 @@ public:
   ARMSubtarget(const Triple &TT, const std::string &CPU, const std::string &FS,
                const ARMBaseTargetMachine &TM, bool IsLittle);
 
+  /// This object will take onwership of \p GISelAccessor.
+  void setGISelAccessor(GISelAccessor &GISel) { this->GISel.reset(&GISel); }
+
   /// getMaxInlineSizeThreshold - Returns the maximum memset / memcpy size
   /// that still makes it profitable to inline the call.
   unsigned getMaxInlineSizeThreshold() const {
@@ -481,11 +458,10 @@ private:
   std::unique_ptr<ARMBaseInstrInfo> InstrInfo;
   ARMTargetLowering   TLInfo;
 
-  /// GlobalISel related APIs.
-  std::unique_ptr<CallLowering> CallLoweringInfo;
-  std::unique_ptr<InstructionSelector> InstSelector;
-  std::unique_ptr<LegalizerInfo> Legalizer;
-  std::unique_ptr<RegisterBankInfo> RegBankInfo;
+  /// Gather the accessor points to GlobalISel-related APIs.
+  /// This is used to avoid ifndefs spreading around while GISel is
+  /// an optional library.
+  std::unique_ptr<GISelAccessor> GISel;
 
   void initializeEnvironment();
   void initSubtargetFeatures(StringRef CPU, StringRef FS);
@@ -505,7 +481,6 @@ public:
   bool hasV8Ops()   const { return HasV8Ops;  }
   bool hasV8_1aOps() const { return HasV8_1aOps; }
   bool hasV8_2aOps() const { return HasV8_2aOps; }
-  bool hasV8_3aOps() const { return HasV8_3aOps; }
   bool hasV8MBaselineOps() const { return HasV8MBaselineOps; }
   bool hasV8MMainlineOps() const { return HasV8MMainlineOps; }
 
@@ -532,7 +507,6 @@ public:
   bool hasFPARMv8() const { return HasFPARMv8; }
   bool hasNEON() const { return HasNEON;  }
   bool hasCrypto() const { return HasCrypto; }
-  bool hasDotProd() const { return HasDotProd; }
   bool hasCRC() const { return HasCRC; }
   bool hasRAS() const { return HasRAS; }
   bool hasVirtualization() const { return HasVirtualization; }
@@ -580,7 +554,6 @@ public:
   bool cheapPredicableCPSRDef() const { return CheapPredicableCPSRDef; }
   bool avoidMOVsShifterOperand() const { return AvoidMOVsShifterOperand; }
   bool hasRetAddrStack() const { return HasRetAddrStack; }
-  bool hasBranchPredictor() const { return HasBranchPredictor; }
   bool hasMPExtension() const { return HasMPExtension; }
   bool hasDSP() const { return HasDSP; }
   bool useNaClTrap() const { return UseNaClTrap; }
@@ -666,8 +639,6 @@ public:
   bool isROPI() const;
   bool isRWPI() const;
 
-  bool useMachineScheduler() const { return UseMISched; }
-  bool disablePostRAScheduler() const { return DisablePostRAScheduler; }
   bool useSoftFloat() const { return UseSoftFloat; }
   bool isThumb() const { return InThumbMode; }
   bool isThumb1Only() const { return InThumbMode && !HasThumb2; }
@@ -676,7 +647,6 @@ public:
   bool isMClass() const { return ARMProcClass == MClass; }
   bool isRClass() const { return ARMProcClass == RClass; }
   bool isAClass() const { return ARMProcClass == AClass; }
-  bool isReadTPHard() const { return ReadTPHard; }
 
   bool isR9Reserved() const {
     return isTargetMachO() ? (ReserveR9 || !HasV6Ops) : ReserveR9;
@@ -751,22 +721,8 @@ public:
   /// True if the GV will be accessed via an indirect symbol.
   bool isGVIndirectSymbol(const GlobalValue *GV) const;
 
-  /// Returns the constant pool modifier needed to access the GV.
-  ARMCP::ARMCPModifier getCPModifier(const GlobalValue *GV) const;
-
   /// True if fast-isel is used.
   bool useFastISel() const;
-
-  /// Returns the correct return opcode for the current feature set.
-  /// Use BX if available to allow mixing thumb/arm code, but fall back
-  /// to plain mov pc,lr on ARMv4.
-  unsigned getReturnOpcode() const {
-    if (isThumb())
-      return ARM::tBX_RET;
-    if (hasV4TOps())
-      return ARM::BX_RET;
-    return ARM::MOVPCLR;
-  }
 };
 
 } // end namespace llvm

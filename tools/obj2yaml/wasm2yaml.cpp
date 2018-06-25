@@ -77,8 +77,6 @@ std::unique_ptr<WasmYAML::CustomSection> WasmDumper::dumpCustomSection(const Was
         LinkingSec->SymbolInfos.push_back(Info);
       }
     }
-    LinkingSec->DataSize = Obj.linkingData().DataSize;
-    LinkingSec->DataAlignment = Obj.linkingData().DataAlignment;
     CustomSec = std::move(LinkingSec);
   } else {
     CustomSec = make_unique<WasmYAML::CustomSection>(WasmSec.Name);
@@ -236,10 +234,9 @@ ErrorOr<WasmYAML::Object *> WasmDumper::dump() {
       auto DataSec = make_unique<WasmYAML::DataSection>();
       for (auto &Segment : Obj.dataSegments()) {
         WasmYAML::DataSegment Seg;
-        Seg.SectionOffset = Segment.SectionOffset;
-        Seg.MemoryIndex = Segment.Data.MemoryIndex;
-        Seg.Offset = Segment.Data.Offset;
-        Seg.Content = yaml::BinaryRef(Segment.Data.Content);
+        Seg.Index = Segment.Index;
+        Seg.Offset = Segment.Offset;
+        Seg.Content = yaml::BinaryRef(Segment.Content);
         DataSec->Segments.push_back(Seg);
       }
       S = std::move(DataSec);

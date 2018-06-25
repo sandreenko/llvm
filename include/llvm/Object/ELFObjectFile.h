@@ -70,7 +70,7 @@ public:
 
   elf_symbol_iterator_range symbols() const;
 
-  static bool classof(const Binary *v) { return v->isELF(); }
+  static inline bool classof(const Binary *v) { return v->isELF(); }
 
   SubtargetFeatures getFeatures() const override;
 
@@ -389,7 +389,7 @@ public:
   const ELFFile<ELFT> *getELFFile() const { return &EF; }
 
   bool isDyldType() const { return isDyldELFObject; }
-  static bool classof(const Binary *v) {
+  static inline bool classof(const Binary *v) {
     return v->getType() == getELFType(ELFT::TargetEndianness == support::little,
                                       ELFT::Is64Bits);
   }
@@ -667,10 +667,6 @@ std::error_code
 ELFObjectFile<ELFT>::getSectionContents(DataRefImpl Sec,
                                         StringRef &Result) const {
   const Elf_Shdr *EShdr = getSection(Sec);
-  if (std::error_code EC =
-          checkOffset(getMemoryBufferRef(),
-                      (uintptr_t)base() + EShdr->sh_offset, EShdr->sh_size))
-    return EC;
   Result = StringRef((const char *)base() + EShdr->sh_offset, EShdr->sh_size);
   return std::error_code();
 }

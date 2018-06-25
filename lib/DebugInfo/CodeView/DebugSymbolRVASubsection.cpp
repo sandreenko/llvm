@@ -1,4 +1,4 @@
-//===- DebugSymbolRVASubsection.cpp ---------------------------------------===//
+//===- DebugSymbolRVASubsection.cpp ------------------------------*- C++-*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -8,11 +8,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/DebugInfo/CodeView/DebugSymbolRVASubsection.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/DebugInfo/CodeView/CodeView.h"
-#include "llvm/Support/BinaryStreamReader.h"
-#include "llvm/Support/BinaryStreamWriter.h"
-#include <cstdint>
 
 using namespace llvm;
 using namespace llvm::codeview;

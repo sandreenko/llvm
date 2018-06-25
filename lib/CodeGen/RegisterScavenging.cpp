@@ -375,8 +375,7 @@ unsigned RegScavenger::findSurvivorReg(MachineBasicBlock::iterator StartMI,
 static std::pair<MCPhysReg, MachineBasicBlock::iterator>
 findSurvivorBackwards(const MachineRegisterInfo &MRI,
     MachineBasicBlock::iterator From, MachineBasicBlock::iterator To,
-    const LiveRegUnits &LiveOut, ArrayRef<MCPhysReg> AllocationOrder,
-    bool RestoreAfter) {
+    const LiveRegUnits &LiveOut, ArrayRef<MCPhysReg> AllocationOrder) {
   bool FoundTo = false;
   MCPhysReg Survivor = 0;
   MachineBasicBlock::iterator Pos;
@@ -389,7 +388,7 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
   for (MachineBasicBlock::iterator I = From;; --I) {
     const MachineInstr &MI = *I;
 
-    Used.accumulate(MI);
+    Used.accumulateBackward(MI);
 
     if (I == To) {
       // See if one of the registers in RC wasn't used so far.
@@ -402,11 +401,6 @@ findSurvivorBackwards(const MachineRegisterInfo &MRI,
       // the register which is not defined/used for the longest time.
       FoundTo = true;
       Pos = To;
-      // Note: It was fine so far to start our search at From, however now that
-      // we have to spill, and can only place the restore after From then
-      // add the regs used/defed by std::next(From) to the set.
-      if (RestoreAfter)
-        Used.accumulate(*std::next(From));
     }
     if (FoundTo) {
       if (Survivor == 0 || !Used.available(Survivor)) {
@@ -581,8 +575,7 @@ unsigned RegScavenger::scavengeRegisterBackwards(const TargetRegisterClass &RC,
   MachineBasicBlock::iterator UseMI;
   ArrayRef<MCPhysReg> AllocationOrder = RC.getRawAllocationOrder(MF);
   std::pair<MCPhysReg, MachineBasicBlock::iterator> P =
-      findSurvivorBackwards(*MRI, MBBI, To, LiveUnits, AllocationOrder,
-                            RestoreAfter);
+      findSurvivorBackwards(*MRI, MBBI, To, LiveUnits, AllocationOrder);
   MCPhysReg Reg = P.first;
   MachineBasicBlock::iterator SpillBefore = P.second;
   assert(Reg != 0 && "No register left to scavenge!");
@@ -633,7 +626,7 @@ static unsigned scavengeVReg(MachineRegisterInfo &MRI, RegScavenger &RS,
   assert(RealDef != nullptr && "Must have at least 1 Def");
 #endif
 
-  // We should only have one definition of the register. However to accommodate
+  // We should only have one definition of the register. However to accomodate
   // the requirements of two address code we also allow definitions in
   // subsequent instructions provided they also read the register. That way
   // we get a single contiguous lifetime.

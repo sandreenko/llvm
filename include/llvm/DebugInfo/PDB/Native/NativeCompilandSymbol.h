@@ -18,11 +18,7 @@ namespace pdb {
 
 class NativeCompilandSymbol : public NativeRawSymbol {
 public:
-  NativeCompilandSymbol(NativeSession &Session, SymIndexId SymbolId,
-                        DbiModuleDescriptor MI);
-
-  std::unique_ptr<NativeRawSymbol> clone() const override;
-
+  NativeCompilandSymbol(NativeSession &Session, DbiModuleDescriptor MI);
   PDB_SymType getSymTag() const override;
   bool isEditAndContinueEnabled() const override;
   uint32_t getLexicalParentId() const override;

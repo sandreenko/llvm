@@ -233,7 +233,8 @@ public:
 
   void recordRelocation(MCAssembler &Asm, const MCAsmLayout &Layout,
                         const MCFragment *Fragment, const MCFixup &Fixup,
-                        MCValue Target, uint64_t &FixedValue) override;
+                        MCValue Target, bool &IsPCRel,
+                        uint64_t &FixedValue) override;
 
   void bindIndirectSymbols(MCAssembler &Asm);
 

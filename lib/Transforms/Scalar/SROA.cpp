@@ -1252,7 +1252,7 @@ static bool isSafeSelectToSpeculate(SelectInst &SI) {
     if (!LI || !LI->isSimple())
       return false;
 
-    // Both operands to the select need to be dereferenceable, either
+    // Both operands to the select need to be dereferencable, either
     // absolutely (e.g. allocas) or at this point because we can see other
     // accesses to it.
     if (!isSafeToLoadUnconditionally(TValue, LI->getAlignment(), DL, LI))
@@ -1673,7 +1673,8 @@ static Value *convertValue(const DataLayout &DL, IRBuilderTy &IRB, Value *V,
 
   // See if we need inttoptr for this type pair. A cast involving both scalars
   // and vectors requires and additional bitcast.
-  if (OldTy->isIntOrIntVectorTy() && NewTy->isPtrOrPtrVectorTy()) {
+  if (OldTy->getScalarType()->isIntegerTy() &&
+      NewTy->getScalarType()->isPointerTy()) {
     // Expand <2 x i32> to i8* --> <2 x i32> to i64 to i8*
     if (OldTy->isVectorTy() && !NewTy->isVectorTy())
       return IRB.CreateIntToPtr(IRB.CreateBitCast(V, DL.getIntPtrType(NewTy)),
@@ -1689,7 +1690,8 @@ static Value *convertValue(const DataLayout &DL, IRBuilderTy &IRB, Value *V,
 
   // See if we need ptrtoint for this type pair. A cast involving both scalars
   // and vectors requires and additional bitcast.
-  if (OldTy->isPtrOrPtrVectorTy() && NewTy->isIntOrIntVectorTy()) {
+  if (OldTy->getScalarType()->isPointerTy() &&
+      NewTy->getScalarType()->isIntegerTy()) {
     // Expand <2 x i8*> to i128 --> <2 x i8*> to <2 x i64> to i128
     if (OldTy->isVectorTy() && !NewTy->isVectorTy())
       return IRB.CreateBitCast(IRB.CreatePtrToInt(V, DL.getIntPtrType(OldTy)),
@@ -2398,22 +2400,11 @@ private:
       LoadInst *NewLI = IRB.CreateAlignedLoad(&NewAI, NewAI.getAlignment(),
                                               LI.isVolatile(), LI.getName());
       if (LI.isVolatile())
-        NewLI->setAtomic(LI.getOrdering(), LI.getSyncScopeID());
-
-      // Any !nonnull metadata or !range metadata on the old load is also valid
-      // on the new load. This is even true in some cases even when the loads
-      // are different types, for example by mapping !nonnull metadata to
-      // !range metadata by modeling the null pointer constant converted to the
-      // integer type.
-      // FIXME: Add support for range metadata here. Currently the utilities
-      // for this don't propagate range metadata in trivial cases from one
-      // integer load to another, don't handle non-addrspace-0 null pointers
-      // correctly, and don't have any support for mapping ranges as the
-      // integer type becomes winder or narrower.
-      if (MDNode *N = LI.getMetadata(LLVMContext::MD_nonnull))
-        copyNonnullMetadata(LI, N, *NewLI);
+        NewLI->setAtomic(LI.getOrdering(), LI.getSynchScope());
 
       // Try to preserve nonnull metadata
+      if (TargetTy->isPointerTy())
+        NewLI->copyMetadata(LI, LLVMContext::MD_nonnull);
       V = NewLI;
 
       // If this is an integer load past the end of the slice (which means the
@@ -2433,7 +2424,7 @@ private:
                                               getSliceAlign(TargetTy),
                                               LI.isVolatile(), LI.getName());
       if (LI.isVolatile())
-        NewLI->setAtomic(LI.getOrdering(), LI.getSyncScopeID());
+        NewLI->setAtomic(LI.getOrdering(), LI.getSynchScope());
 
       V = NewLI;
       IsPtrAdjusted = true;
@@ -2576,7 +2567,7 @@ private:
     }
     NewSI->copyMetadata(SI, LLVMContext::MD_mem_parallel_loop_access);
     if (SI.isVolatile())
-      NewSI->setAtomic(SI.getOrdering(), SI.getSyncScopeID());
+      NewSI->setAtomic(SI.getOrdering(), SI.getSynchScope());
     Pass.DeadInsts.insert(&SI);
     deleteIfTriviallyDead(OldOp);
 
@@ -3589,11 +3580,10 @@ bool SROA::presplitLoadsAndStores(AllocaInst &AI, AllocaSlices &AS) {
     int Idx = 0, Size = Offsets.Splits.size();
     for (;;) {
       auto *PartTy = Type::getIntNTy(Ty->getContext(), PartSize * 8);
-      auto AS = LI->getPointerAddressSpace();
-      auto *PartPtrTy = PartTy->getPointerTo(AS);
+      auto *PartPtrTy = PartTy->getPointerTo(LI->getPointerAddressSpace());
       LoadInst *PLoad = IRB.CreateAlignedLoad(
           getAdjustedPtr(IRB, DL, BasePtr,
-                         APInt(DL.getPointerSizeInBits(AS), PartOffset),
+                         APInt(DL.getPointerSizeInBits(), PartOffset),
                          PartPtrTy, BasePtr->getName() + "."),
           getAdjustedAlignment(LI, PartOffset, DL), /*IsVolatile*/ false,
           LI->getName());
@@ -4062,20 +4052,13 @@ bool SROA::splitAlloca(AllocaInst &AI, AllocaSlices &AS) {
         uint64_t Size = Fragment.Size;
         if (ExprFragment) {
           uint64_t AbsEnd =
-              ExprFragment->OffsetInBits + ExprFragment->SizeInBits;
+	    ExprFragment->OffsetInBits + ExprFragment->SizeInBits;
           if (Start >= AbsEnd)
             // No need to describe a SROAed padding.
             continue;
           Size = std::min(Size, AbsEnd - Start);
         }
-        // The new, smaller fragment is stenciled out from the old fragment.
-        if (auto OrigFragment = FragmentExpr->getFragmentInfo()) {
-          assert(Start >= OrigFragment->OffsetInBits &&
-                 "new fragment is outside of original fragment");
-          Start -= OrigFragment->OffsetInBits;
-        }
-        FragmentExpr =
-            DIExpression::createFragmentExpression(Expr, Start, Size);
+        FragmentExpr = DIB.createFragmentExpression(Start, Size);
       }
 
       // Remove any existing dbg.declare intrinsic describing the same alloca.

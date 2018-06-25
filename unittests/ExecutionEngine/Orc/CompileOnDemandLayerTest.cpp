@@ -50,14 +50,13 @@ public:
 
 TEST(CompileOnDemandLayerTest, FindSymbol) {
   auto MockBaseLayer = createMockBaseLayer<int>(
-      DoNothingAndReturn<int>(0),
-      [](int Handle) { return Error::success(); },
+      DoNothingAndReturn<int>(0), DoNothingAndReturn<void>(),
       [](const std::string &Name, bool) {
         if (Name == "foo")
           return JITSymbol(1, JITSymbolFlags::Exported);
         return JITSymbol(nullptr);
       },
-      ReturnNullJITSymbol());
+      DoNothingAndReturn<JITSymbol>(nullptr));
 
   typedef decltype(MockBaseLayer) MockBaseLayerT;
   DummyCallbackManager CallbackMgr;

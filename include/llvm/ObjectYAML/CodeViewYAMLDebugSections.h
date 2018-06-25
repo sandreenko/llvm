@@ -1,4 +1,4 @@
-//=- CodeViewYAMLDebugSections.h - CodeView YAMLIO debug sections -*- C++ -*-=//
+//===- CodeViewYAMLDebugSections.h - CodeView YAMLIO debug sections -------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -15,33 +15,27 @@
 #ifndef LLVM_OBJECTYAML_CODEVIEWYAMLDEBUGSECTIONS_H
 #define LLVM_OBJECTYAML_CODEVIEWYAMLDEBUGSECTIONS_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/DebugInfo/CodeView/CodeView.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsection.h"
 #include "llvm/DebugInfo/CodeView/DebugSubsectionRecord.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/YAMLTraits.h"
-#include <cstdint>
-#include <memory>
-#include <vector>
+#include "llvm/ObjectYAML/YAML.h"
 
 namespace llvm {
 
 namespace codeview {
-
+class DebugStringTableSubsection;
+class DebugStringTableSubsectionRef;
+class DebugChecksumsSubsectionRef;
+class DebugStringTableSubsection;
+class DebugChecksumsSubsection;
 class StringsAndChecksums;
 class StringsAndChecksumsRef;
-
-} // end namespace codeview
-
+}
 namespace CodeViewYAML {
 
 namespace detail {
-
 struct YAMLSubsectionBase;
-
-} // end namespace detail
+}
 
 struct YAMLFrameData {
   uint32_t RvaStart;
@@ -93,6 +87,7 @@ struct SourceLineInfo {
   uint32_t RelocSegment;
   codeview::LineFlags Flags;
   uint32_t CodeSize;
+
   std::vector<SourceLineBlock> Blocks;
 };
 
@@ -129,12 +124,11 @@ fromDebugS(ArrayRef<uint8_t> Data, const codeview::StringsAndChecksumsRef &SC);
 void initializeStringsAndChecksums(ArrayRef<YAMLDebugSubsection> Sections,
                                    codeview::StringsAndChecksums &SC);
 
-} // end namespace CodeViewYAML
-
-} // end namespace llvm
+} // namespace CodeViewYAML
+} // namespace llvm
 
 LLVM_YAML_DECLARE_MAPPING_TRAITS(CodeViewYAML::YAMLDebugSubsection)
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(CodeViewYAML::YAMLDebugSubsection)
 
-#endif // LLVM_OBJECTYAML_CODEVIEWYAMLDEBUGSECTIONS_H
+#endif
